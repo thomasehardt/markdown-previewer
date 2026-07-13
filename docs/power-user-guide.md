@@ -20,7 +20,7 @@ Global options (apply to every path):
 |---|---|
 | `--theme <PATH>` | Layer a theme CSS file over the built-in default. |
 | `--scheme <auto\|light\|dark>` | Color scheme. Unset follows `config.toml`, then the OS. |
-| `--no-watch` | Disable file watching (wired for a later phase). |
+| `--no-watch` | Disable file watching and the reload banner. |
 | `--view-source-default` | Open showing the read-only raw source instead of the rendered view (toggle in-page with the button or `s`). |
 
 Status today: the default path and `view` open the native webview; `serve` (and
@@ -44,9 +44,19 @@ mdp serve --no-open --port 0 GENERATED.md
 ```
 
 A calling tool captures stdout to get the URL, then opens or embeds it. Routes:
-`/` serves the self-contained document; `/.mdp/reload` returns
-`{"changed":false}` today and becomes the file-watch reload signal in Phase 5;
+`/` re-renders and serves the self-contained document; `/.mdp/reload` reports
+whether the file changed on disk (the in-page shell polls it to offer a reload);
 anything else is a 404.
+
+## Live reload
+
+By default `mdp` watches the input file. It watches the file's parent directory
+(so it survives editors that save by writing a temp file and renaming over the
+original), coalesces the save-event storm with a short debounce, and then shows
+a dismissible "this file changed on disk" banner. It never swaps content on its
+own: the reader clicks Reload, which re-renders from disk. Disable with
+`--no-watch`. On network filesystems where events are unreliable, watching may
+miss changes; reopen the file in that case.
 
 ## Authoring a theme
 

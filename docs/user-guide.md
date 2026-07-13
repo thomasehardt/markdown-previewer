@@ -60,6 +60,12 @@ Click **View source** (top-right), or press `s`, to switch between the rendered
 view and the raw Markdown. Both are read-only. Start in source view with
 `--view-source-default`.
 
+## Live updates
+
+While a preview is open, `mdp` watches the file. When you save changes, a small
+banner appears offering to reload. It never reloads on its own, so it will not
+interrupt your reading. Turn watching off with `--no-watch`.
+
 ## What renders
 
 - CommonMark plus GitHub-flavored Markdown: tables, task lists, strikethrough,

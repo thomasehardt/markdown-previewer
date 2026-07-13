@@ -240,3 +240,42 @@ body.mdp-view-source-active .mdp-document {
 body.mdp-view-source-active .mdp-source {
   display: block;
 }
+
+/* Smart reload banner (design section 4.3). Hidden until the shell's poll of
+ * the reload endpoint reports a change; it never swaps content on its own. */
+.mdp-reload-banner {
+  position: fixed;
+  left: 50%;
+  top: var(--space-3);
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-card);
+  color: var(--text-body);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.28);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+}
+.mdp-reload-banner[hidden] {
+  display: none;
+}
+.mdp-reload-banner button {
+  padding: var(--space-1) var(--space-3);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  color: var(--text-body);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.mdp-reload-banner button#mdp-reload-accept {
+  color: var(--surface-page);
+  background: var(--accent);
+  border-color: var(--accent);
+}

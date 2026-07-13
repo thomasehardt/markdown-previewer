@@ -12,6 +12,7 @@ expression: doc.html
 <style data-mdp="shell">/* SHELL_CSS redacted */</style>
 </head>
 <body>
+<div id="mdp-reload-banner" class="mdp-reload-banner" role="status" hidden>This file changed on disk. <button type="button" id="mdp-reload-accept">Reload</button> <button type="button" id="mdp-reload-dismiss">Dismiss</button></div>
 <button type="button" id="mdp-view-toggle" class="mdp-view-toggle" aria-pressed="false">View source</button>
 <main class="mdp-document">
 <h1>Dark mode</h1>

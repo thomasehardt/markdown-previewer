@@ -21,7 +21,7 @@ requirement to the implementation plan in `docs/design.md` section 9.
 | FR7 | A read-only "view source" toggle showing the raw Markdown. | 4 | Done (button or press `s`) |
 | FR8 | Export to a single self-contained HTML file (offline, diagrams and math preserved). | 6 | Planned |
 | FR9 | Export to PDF (offline, diagrams and math preserved). | 7 | Planned (macOS silent-PDF path proven by spike) |
-| FR10 | Watch tracked file(s); on change, show a non-intrusive reload prompt. Never auto-swap the reader's view. | 5 | Planned |
+| FR10 | Watch tracked file(s); on change, show a non-intrusive reload prompt. Never auto-swap the reader's view. | 5 | Done (parent-dir watch, ~300ms debounce, banner; `--no-watch`) |
 | FR11 | Instant launch feedback: a window/tab with a loading state appears immediately, then content swaps in. | 1 | Done (spinner shell) |
 | FR12 | Callable by other tools (including Claude Code) to display Markdown headlessly (serve on an ephemeral port; print the URL). | 3 | Done |
 | FR13 | Multiple display frontends over one shared core: native webview (default), local server + browser, headless export. | 1/3/6 | webview + serve Done (with webview->serve fallback); export Planned |

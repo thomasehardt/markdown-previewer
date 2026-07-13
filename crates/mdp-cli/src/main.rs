@@ -6,11 +6,11 @@
 //! `serve` and `export` are wired into the clap surface but their frontends
 //! land in later phases, so they report that plainly instead of pretending.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
-use mdp_core::{ColorScheme, RenderOptions};
+use mdp_core::{render_document, ColorScheme, RenderOptions, RenderedDoc};
 
 mod config;
 use config::Config;
@@ -155,47 +155,71 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     };
 
-    let doc = match render_file(&file, theme.as_deref(), scheme, cli.view_source_default) {
-        Ok(doc) => doc,
-        Err(code) => return code,
+    // Validate up front so failures are a clear early error, not a blank window.
+    // The theme is read once (it does not change during a session); the Markdown
+    // is re-read on every render so a reload picks up on-disk edits.
+    let extra_theme_css = match &theme {
+        Some(path) => match std::fs::read_to_string(path) {
+            Ok(css) => Some(css),
+            Err(e) => {
+                eprintln!("mdp: cannot read theme {}: {e}", path.display());
+                return ExitCode::FAILURE;
+            }
+        },
+        None => None,
     };
+    if let Err(e) = std::fs::read_to_string(&file) {
+        eprintln!("mdp: cannot read {}: {e}", file.display());
+        return ExitCode::FAILURE;
+    }
+
+    let spec = RenderSpec {
+        file: file.clone(),
+        scheme,
+        extra_theme_css,
+        view_source: cli.view_source_default,
+    };
+    // Watching the input file drives the reload banner; --no-watch disables it.
+    let watch_paths: Vec<PathBuf> = if cli.no_watch { Vec::new() } else { vec![file] };
 
     match action {
-        Action::Webview => open_webview(&doc),
-        Action::Serve { port, open } => open_serve(&doc, port, open),
+        Action::Webview => open_webview(&spec, &watch_paths),
+        Action::Serve { port, open } => open_serve(&spec, &watch_paths, port, open),
     }
 }
 
-/// Read a Markdown file and render it to the self-contained document, applying
-/// the CLI's theme and color-scheme options. Returns the CLI exit code to use
-/// on any I/O failure.
-fn render_file(
-    file: &Path,
-    theme: Option<&Path>,
+/// The inputs a frontend needs to (re)render the document. Cheap to clone; each
+/// `renderer()` call produces a fresh closure so a frontend can be handed one
+/// and the fallback path can build another.
+struct RenderSpec {
+    file: PathBuf,
     scheme: ColorScheme,
+    extra_theme_css: Option<String>,
     view_source: bool,
-) -> Result<mdp_core::RenderedDoc, ExitCode> {
-    let markdown = std::fs::read_to_string(file).map_err(|e| {
-        eprintln!("mdp: cannot read {}: {e}", file.display());
-        ExitCode::FAILURE
-    })?;
+}
 
-    let extra_theme_css = match theme {
-        Some(theme_path) => Some(std::fs::read_to_string(theme_path).map_err(|e| {
-            eprintln!("mdp: cannot read theme {}: {e}", theme_path.display());
-            ExitCode::FAILURE
-        })?),
-        None => None,
-    };
-
-    let opts = RenderOptions {
-        title: file.file_name().map(|n| n.to_string_lossy().into_owned()),
-        color_scheme: scheme,
-        extra_theme_css,
-        view_source_default: view_source,
-    };
-
-    Ok(mdp_core::render_document(&markdown, &opts))
+impl RenderSpec {
+    /// Build a render closure the frontends call to (re)render from disk. The
+    /// Markdown is read per call so a reload reflects on-disk edits; a read
+    /// failure renders a small error page rather than crashing the frontend.
+    fn renderer(&self) -> impl Fn() -> RenderedDoc + Send + Sync + 'static {
+        let file = self.file.clone();
+        let scheme = self.scheme;
+        let extra_theme_css = self.extra_theme_css.clone();
+        let view_source = self.view_source;
+        let title = file.file_name().map(|n| n.to_string_lossy().into_owned());
+        move || {
+            let markdown = std::fs::read_to_string(&file)
+                .unwrap_or_else(|e| format!("# Cannot read file\n\n`{}`: {e}\n", file.display()));
+            let opts = RenderOptions {
+                title: title.clone(),
+                color_scheme: scheme,
+                extra_theme_css: extra_theme_css.clone(),
+                view_source_default: view_source,
+            };
+            render_document(&markdown, &opts)
+        }
+    }
 }
 
 /// Dispatch to the native webview frontend when the feature is compiled in.
@@ -205,15 +229,15 @@ fn render_file(
 /// cannot initialize (design risk #5: e.g. a missing Linux webkit runtime), we
 /// automatically fall back to the local-server frontend when it is available.
 #[cfg(feature = "webview")]
-fn open_webview(doc: &mdp_core::RenderedDoc) -> ExitCode {
-    match mdp_webview::show(doc) {
+fn open_webview(spec: &RenderSpec, watch: &[PathBuf]) -> ExitCode {
+    match mdp_webview::show(spec.renderer(), watch) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("mdp: {e}");
             #[cfg(feature = "serve")]
             {
                 eprintln!("mdp: falling back to the local-server frontend.");
-                open_serve(doc, 0, true)
+                open_serve(spec, watch, 0, true)
             }
             #[cfg(not(feature = "serve"))]
             {
@@ -226,15 +250,15 @@ fn open_webview(doc: &mdp_core::RenderedDoc) -> ExitCode {
 /// When built without the `webview` feature, prefer the server frontend if it is
 /// present; otherwise there is no way to display.
 #[cfg(not(feature = "webview"))]
-fn open_webview(doc: &mdp_core::RenderedDoc) -> ExitCode {
+fn open_webview(spec: &RenderSpec, watch: &[PathBuf]) -> ExitCode {
     #[cfg(feature = "serve")]
     {
         eprintln!("mdp: built without the `webview` feature; using the local server.");
-        open_serve(doc, 0, true)
+        open_serve(spec, watch, 0, true)
     }
     #[cfg(not(feature = "serve"))]
     {
-        let _ = doc;
+        let _ = (spec, watch);
         eprintln!("mdp: built without a display frontend (webview or serve).");
         ExitCode::from(2)
     }
@@ -242,8 +266,8 @@ fn open_webview(doc: &mdp_core::RenderedDoc) -> ExitCode {
 
 /// Dispatch to the local-server frontend when the feature is compiled in.
 #[cfg(feature = "serve")]
-fn open_serve(doc: &mdp_core::RenderedDoc, port: u16, open_browser: bool) -> ExitCode {
-    match mdp_serve::serve(doc, port, open_browser) {
+fn open_serve(spec: &RenderSpec, watch: &[PathBuf], port: u16, open_browser: bool) -> ExitCode {
+    match mdp_serve::serve(spec.renderer(), watch, port, open_browser) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("mdp: {e}");
@@ -254,8 +278,8 @@ fn open_serve(doc: &mdp_core::RenderedDoc, port: u16, open_browser: bool) -> Exi
 
 /// Fallback when the binary is built without the `serve` feature.
 #[cfg(not(feature = "serve"))]
-fn open_serve(doc: &mdp_core::RenderedDoc, _port: u16, _open_browser: bool) -> ExitCode {
-    let _ = doc;
+fn open_serve(spec: &RenderSpec, _watch: &[PathBuf], _port: u16, _open_browser: bool) -> ExitCode {
+    let _ = spec;
     eprintln!("mdp: built without the `serve` feature.");
     ExitCode::from(2)
 }

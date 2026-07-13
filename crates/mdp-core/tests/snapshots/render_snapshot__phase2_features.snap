@@ -15,6 +15,7 @@ expression: doc.html
 <script data-mdp="katex-lib">/* KATEX_JS redacted */</script>
 </head>
 <body>
+<div id="mdp-reload-banner" class="mdp-reload-banner" role="status" hidden>This file changed on disk. <button type="button" id="mdp-reload-accept">Reload</button> <button type="button" id="mdp-reload-dismiss">Dismiss</button></div>
 <button type="button" id="mdp-view-toggle" class="mdp-view-toggle" aria-pressed="false">View source</button>
 <main class="mdp-document">
 <p>Inline <span data-math-style="inline">a^2 + b^2 = c^2</span> and a display block:</p>

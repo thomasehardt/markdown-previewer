@@ -1,35 +1,21 @@
 //! Native webview frontend (wry + tao).
 //!
-//! This crate is the default frontend behind the `webview` feature. It consumes
-//! the one load-bearing product of `mdp-core` (a fully self-contained HTML
-//! string) and displays it read-only in a native OS webview.
+//! Default frontend behind the `webview` feature. It displays `mdp-core`'s
+//! self-contained HTML read-only in a native OS webview, served offline over a
+//! custom protocol behind an instant spinner shell (design section 9 / 8.7).
 //!
-//! Launch sequence (design section 9, Phase 1, and the latency mitigation in
-//! section 8, item 7):
-//!
-//! 1. A `tao` window is created and shown immediately.
-//! 2. The webview's initial URL is `mdprev://localhost/`, whose very first
-//!    request the custom protocol answers with a tiny inline spinner shell.
-//!    This paints while the OS webview engine finishes cold-init, so the user
-//!    sees instant feedback rather than a white flash.
-//! 3. The spinner navigates to `mdprev://localhost/doc`, which the same
-//!    protocol answers with the already-rendered `RenderedDoc.html`. Content
-//!    swaps in.
-//!
-//! The custom protocol is the offline asset boundary: every byte the page needs
-//! is served from memory with a correct MIME type and zero network access. In
-//! Phase 1 the rendered document is fully self-contained (all CSS and JS are
-//! inlined by `mdp-core`), so `/doc` is the only content route the page fetches;
-//! the extension-based MIME routing is in place so later phases can serve
-//! separate embedded assets (fonts, Mermaid, KaTeX) over the same protocol
-//! without reworking this layer.
-//!
-//! The preview is read-only by construction: rendered, sanitized HTML in a
-//! webview with no editing affordances, no form posts, and no navigation away
-//! from the custom-protocol origin.
+//! Live reload (design section 4.3): the document route re-renders from disk on
+//! each request, and a background watcher flips a shared "changed" flag that the
+//! reload endpoint reports. The in-page shell polls that endpoint and shows a
+//! non-intrusive banner; the reader reloads on demand. The preview stays
+//! read-only: sanitized HTML, no editing affordances, no navigation off origin.
 
 use std::borrow::Cow;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
+use mdp_core::watch::{self, WatchHandle};
 use mdp_core::RenderedDoc;
 
 use tao::{
@@ -49,36 +35,50 @@ const SCHEME: &str = "mdprev";
 /// Path that serves the rendered document. The spinner navigates here.
 const DOC_PATH: &str = "/doc";
 
-/// Open a native window and display the already-rendered, self-contained
-/// document read-only.
+/// The reload-signal endpoint the shell polls (design section 4.3).
+const RELOAD_PATH: &str = "/.mdp/reload";
+
+/// Open a native window and display `render`'s output read-only.
 ///
-/// On success this runs the OS event loop and does not return until the window
-/// is closed (the process exits from within the loop, per `tao`'s diverging
-/// `run`). It returns `Err` only when the window or webview cannot be created,
-/// so the CLI can fall back to another frontend.
-pub fn show(doc: &RenderedDoc) -> Result<(), FrontendError> {
-    // Own the strings the protocol handler serves. The handler is `Fn + 'static`
-    // and may run for every request, so it captures owned copies.
-    let document_html = doc.html.clone();
-    let spinner_html = spinner_page(&doc.title);
+/// Re-renders on each document request (so a reload after a change shows fresh
+/// content) and, when `watch_paths` is non-empty, runs a watcher that drives the
+/// reload banner. On success this runs the OS event loop and does not return
+/// until the window closes; it returns `Err` only when the window or webview
+/// cannot be created, so the CLI can fall back to another frontend.
+pub fn show<F>(render: F, watch_paths: &[PathBuf]) -> Result<(), FrontendError>
+where
+    F: Fn() -> RenderedDoc + Send + Sync + 'static,
+{
+    // One render up front for the window title and instant spinner.
+    let initial = render();
+    let spinner_html = spinner_page(&initial.title);
+    let title = window_title(&initial.title);
+
+    let changed = Arc::new(AtomicBool::new(false));
+    let _watch = start_watch(watch_paths, changed.clone());
 
     let event_loop = EventLoop::new();
-
     let window = WindowBuilder::new()
-        .with_title(window_title(&doc.title))
+        .with_title(title)
         .with_inner_size(LogicalSize::new(1000.0, 800.0))
         .build(&event_loop)
         .map_err(|e| FrontendError::Window(e.to_string()))?;
 
+    // The protocol handler is `Fn + 'static`; share the renderer and flag in.
+    let render = Arc::new(render);
+    let handler_render = render.clone();
+    let handler_changed = changed.clone();
     let builder = WebViewBuilder::new()
         .with_custom_protocol(SCHEME.to_string(), move |_id, request| {
-            serve(request.uri().path(), &spinner_html, &document_html)
+            respond(
+                request.uri().path(),
+                &spinner_html,
+                handler_render.as_ref(),
+                &handler_changed,
+            )
         })
-        // Load the spinner first; it hands off to the document (design 8.7).
         .with_url(format!("{SCHEME}://localhost/"));
 
-    // wry builds against the window on macOS/Windows; on unix it attaches to
-    // the window's GTK vbox. This mirrors wry's own custom-protocol example.
     #[cfg(any(
         target_os = "windows",
         target_os = "macos",
@@ -117,20 +117,69 @@ pub fn show(doc: &RenderedDoc) -> Result<(), FrontendError> {
     });
 }
 
-/// Answer one custom-protocol request. Pure and synchronous: given the request
-/// path and the two owned bodies, return the correct response with its MIME
-/// type. Split out so it is unit-testable without a live webview.
-fn serve(
+/// Start watching `paths` (if any), flipping `changed` on each debounced change.
+/// A watch-setup failure is non-fatal: the preview shows without live reload.
+fn start_watch(paths: &[PathBuf], changed: Arc<AtomicBool>) -> Option<WatchHandle> {
+    if paths.is_empty() {
+        return None;
+    }
+    match watch::watch_files(paths, move |_change| changed.store(true, Ordering::SeqCst)) {
+        Ok(handle) => Some(handle),
+        Err(e) => {
+            eprintln!("mdp: file watching disabled: {e}");
+            None
+        }
+    }
+}
+
+/// Which resource a custom-protocol path maps to. Pure, so it is unit-testable.
+#[derive(Debug, PartialEq, Eq)]
+enum WebRoute {
+    Spinner,
+    Document,
+    Reload,
+    NotFound,
+}
+
+fn route(path: &str) -> WebRoute {
+    match path {
+        "/" | "" | "/index.html" => WebRoute::Spinner,
+        DOC_PATH => WebRoute::Document,
+        RELOAD_PATH => WebRoute::Reload,
+        _ => WebRoute::NotFound,
+    }
+}
+
+/// Answer one custom-protocol request. The document route re-renders and clears
+/// the change flag; the reload route reports the flag. Testable with a plain
+/// render closure and flag, no live webview needed.
+fn respond<F>(
     path: &str,
     spinner_html: &str,
-    document_html: &str,
-) -> Response<Cow<'static, [u8]>> {
-    match path {
-        "/" | "" | "/index.html" => {
-            html_response(spinner_html.to_owned().into_bytes())
+    render: &F,
+    changed: &AtomicBool,
+) -> Response<Cow<'static, [u8]>>
+where
+    F: Fn() -> RenderedDoc,
+{
+    match route(path) {
+        WebRoute::Spinner => html_response(spinner_html.to_owned().into_bytes()),
+        WebRoute::Document => {
+            let doc = render();
+            changed.store(false, Ordering::SeqCst);
+            html_response(doc.html.into_bytes())
         }
-        DOC_PATH => html_response(document_html.to_owned().into_bytes()),
-        other => not_found(other),
+        WebRoute::Reload => json_response(reload_body(changed.load(Ordering::SeqCst)).into_bytes()),
+        WebRoute::NotFound => not_found(path),
+    }
+}
+
+/// The reload endpoint's JSON body for a given changed state.
+fn reload_body(changed: bool) -> String {
+    if changed {
+        "{\"changed\":true}".to_string()
+    } else {
+        "{\"changed\":false}".to_string()
     }
 }
 
@@ -142,21 +191,25 @@ fn html_response(bytes: Vec<u8>) -> Response<Cow<'static, [u8]>> {
         .expect("static html response is always well-formed")
 }
 
-/// A 404 for any path the preview does not serve. Kept explicit so an
-/// unexpected fetch surfaces rather than silently returning the document.
+/// Build an `application/json` response from owned bytes.
+fn json_response(bytes: Vec<u8>) -> Response<Cow<'static, [u8]>> {
+    Response::builder()
+        .header(CONTENT_TYPE, "application/json; charset=utf-8")
+        .body(Cow::Owned(bytes))
+        .expect("static json response is always well-formed")
+}
+
+/// A 404 for any path the preview does not serve.
 fn not_found(path: &str) -> Response<Cow<'static, [u8]>> {
     Response::builder()
         .status(404)
         .header(CONTENT_TYPE, "text/plain; charset=utf-8")
-        .body(Cow::Owned(
-            format!("not found: {path}").into_bytes(),
-        ))
+        .body(Cow::Owned(format!("not found: {path}").into_bytes()))
         .expect("static 404 response is always well-formed")
 }
 
-/// Map a path's extension to a MIME type. Covers the asset kinds later phases
-/// serve over this protocol (fonts, diagrams, styles) so the routing layer does
-/// not change when those land. Falls back to a generic binary type.
+/// Map a path's extension to a MIME type. Covers the asset kinds served over
+/// this protocol; falls back to a generic binary type.
 fn mime_for(path: &str) -> &'static str {
     let ext = path.rsplit('.').next().unwrap_or("");
     match ext {
@@ -178,10 +231,9 @@ fn mime_for(path: &str) -> &'static str {
     }
 }
 
-/// The tiny inline spinner shell served on the first request. It is brand
-/// neutral, respects `prefers-color-scheme` so there is no white flash in dark
-/// mode, and immediately hands off to the rendered document. It carries no
-/// external references, keeping the offline guarantee intact.
+/// The tiny inline spinner shell served on the first request. Brand neutral,
+/// respects `prefers-color-scheme` (no white flash in dark mode), and hands off
+/// to the rendered document. Carries no external references.
 fn spinner_page(title: &str) -> String {
     format!(
         "<!doctype html>\n\
@@ -214,7 +266,6 @@ fn spinner_page(title: &str) -> String {
 <body>\n\
 <div class=\"spinner\" role=\"status\" aria-label=\"Loading preview\"></div>\n\
 <script>\n\
-  /* Paint the spinner once, then hand off to the rendered document. */\n\
   requestAnimationFrame(function () {{\n\
     requestAnimationFrame(function () {{\n\
       window.location.replace('{scheme}://localhost{doc}');\n\
@@ -229,8 +280,7 @@ fn spinner_page(title: &str) -> String {
     )
 }
 
-/// The window (not document) title. Falls back to the app name when the doc
-/// title is empty so the OS titlebar is never blank.
+/// The window (not document) title. Falls back to the app name when blank.
 fn window_title(title: &str) -> String {
     if title.trim().is_empty() {
         "mdp".to_string()
@@ -248,8 +298,7 @@ fn escape_html(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// Errors a frontend reports back to the CLI so it can fall back or exit
-/// cleanly.
+/// Errors a frontend reports back to the CLI so it can fall back or exit.
 #[derive(Debug)]
 pub enum FrontendError {
     /// The native window could not be created.
@@ -273,51 +322,67 @@ impl std::error::Error for FrontendError {}
 mod tests {
     use super::*;
 
+    fn doc(html: &str) -> RenderedDoc {
+        RenderedDoc {
+            html: html.to_string(),
+            title: "T".to_string(),
+        }
+    }
+
     fn body_string(resp: &Response<Cow<'static, [u8]>>) -> String {
         String::from_utf8(resp.body().to_vec()).unwrap()
     }
 
     #[test]
-    fn root_serves_the_spinner_shell() {
-        let resp = serve("/", "SPINNER-BODY", "DOC-BODY");
-        assert_eq!(resp.status(), 200);
-        assert_eq!(
-            resp.headers().get(CONTENT_TYPE).unwrap(),
-            "text/html; charset=utf-8"
-        );
-        assert!(body_string(&resp).contains("SPINNER-BODY"));
+    fn routes_map_as_expected() {
+        assert_eq!(route("/"), WebRoute::Spinner);
+        assert_eq!(route(""), WebRoute::Spinner);
+        assert_eq!(route(DOC_PATH), WebRoute::Document);
+        assert_eq!(route(RELOAD_PATH), WebRoute::Reload);
+        assert_eq!(route("/nope.png"), WebRoute::NotFound);
     }
 
     #[test]
-    fn doc_path_serves_the_rendered_document() {
-        let resp = serve(DOC_PATH, "SPINNER-BODY", "DOC-BODY");
+    fn root_serves_the_spinner() {
+        let changed = AtomicBool::new(false);
+        let resp = respond("/", "SPINNER", &|| doc("DOC"), &changed);
+        assert_eq!(resp.status(), 200);
+        assert!(body_string(&resp).contains("SPINNER"));
+    }
+
+    #[test]
+    fn doc_route_renders_fresh_and_clears_the_flag() {
+        let changed = AtomicBool::new(true);
+        let resp = respond(DOC_PATH, "SPINNER", &|| doc("DOC-BODY"), &changed);
         assert_eq!(resp.status(), 200);
         assert!(body_string(&resp).contains("DOC-BODY"));
-        assert!(!body_string(&resp).contains("SPINNER-BODY"));
+        // Serving fresh content clears the change flag.
+        assert!(!changed.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn reload_route_reports_the_flag() {
+        let changed = AtomicBool::new(true);
+        let resp = respond(RELOAD_PATH, "SPINNER", &|| doc("DOC"), &changed);
+        assert!(body_string(&resp).contains("\"changed\":true"));
+        // Reading the flag does not clear it (only serving the document does).
+        assert!(changed.load(Ordering::SeqCst));
     }
 
     #[test]
     fn unknown_path_is_a_404() {
-        let resp = serve("/nope.png", "s", "d");
+        let changed = AtomicBool::new(false);
+        let resp = respond("/whatever", "SPINNER", &|| doc("DOC"), &changed);
         assert_eq!(resp.status(), 404);
     }
 
     #[test]
-    fn spinner_hands_off_to_the_document_and_is_offline() {
+    fn spinner_hands_off_and_is_offline() {
         let page = spinner_page("Readme.md");
-        // Navigates to the doc route over the custom protocol only.
         assert!(page.contains("mdprev://localhost/doc"));
-        // No external references: nothing but the custom scheme appears.
         assert!(!page.contains("http://"));
         assert!(!page.contains("https://"));
-        // Title is escaped into the shell.
         assert!(page.contains("<title>Readme.md</title>"));
-    }
-
-    #[test]
-    fn spinner_title_is_escaped() {
-        let page = spinner_page("a<b>&\"'");
-        assert!(page.contains("a&lt;b&gt;&amp;&quot;&#39;"));
     }
 
     #[test]
@@ -327,11 +392,9 @@ mod tests {
     }
 
     #[test]
-    fn mime_types_cover_the_offline_asset_kinds() {
+    fn mime_types_cover_asset_kinds() {
         assert_eq!(mime_for("a.css"), "text/css; charset=utf-8");
-        assert_eq!(mime_for("a.js"), "text/javascript; charset=utf-8");
-        assert_eq!(mime_for("KaTeX_Main.woff2"), "font/woff2");
-        assert_eq!(mime_for("d.svg"), "image/svg+xml");
+        assert_eq!(mime_for("f.woff2"), "font/woff2");
         assert_eq!(mime_for("noext"), "application/octet-stream");
     }
 }

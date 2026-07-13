@@ -16,8 +16,14 @@ rust-embed = { workspace = true }
 # default syntax and theme sets. Highlighting runs once in core so preview and
 # export are byte-identical.
 syntect = { version = "5.3.0", default-features = false, features = ["default-fancy"] }
+# File watching (design section 4.3). Depend on the debouncer and use its
+# re-exported `notify` to avoid a version skew; the debouncer coalesces the
+# save-event storm and stitches the atomic-rename dance editors use.
+notify-debouncer-full = "0.7"
 
 [dev-dependencies]
 # Review-friendly HTML snapshots; filters redact the large inlined asset blobs
 # (design section 7). cargo-insta 1.48 is installed in this environment.
 insta = { version = "1.48", features = ["filters"] }
+# Real temp files for the watcher integration test.
+tempfile = "3"

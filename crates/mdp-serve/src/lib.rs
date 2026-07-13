@@ -1,36 +1,52 @@
 //! Local HTTP server frontend (tiny_http + system browser).
 //!
-//! Serves the already-rendered, self-contained document on a loopback port and
-//! optionally opens the system browser. This is the robust, display-agnostic
-//! path (design section 6): it needs no OS webview, so it works headless, is the
-//! natural hook for a calling tool that wants a URL, and is the automatic
-//! fallback when the native webview cannot initialize (design risk #5).
+//! Serves a freshly-rendered document on a loopback port and optionally opens
+//! the system browser. This is the robust, display-agnostic path (design
+//! section 6): no OS webview, works headless, is the natural hook for a calling
+//! tool that wants a URL, and is the automatic fallback when the native webview
+//! cannot initialize (design risk #5).
 //!
-//! Because `mdp-core` inlines every asset into the document, a single `/` route
-//! is all the page fetches. A stub reload endpoint is in place for the Phase 5
-//! file-watching signal.
+//! Live reload (design section 4.3): the document route re-renders from disk on
+//! every request, and when watch paths are given a background watcher flips a
+//! "changed" flag. The page polls the reload endpoint; on a change it shows a
+//! non-intrusive banner and reloads only when the reader asks.
 
+use std::io::Cursor;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+use mdp_core::watch::{self, WatchHandle};
 use mdp_core::RenderedDoc;
 use tiny_http::{Header, Response, Server};
 
 /// Loopback host. This never binds a public interface.
 const HOST: &str = "127.0.0.1";
 
-/// The reload-signal endpoint. A stub in Phase 3 (always "no change"); Phase 5
-/// file watching turns it into the real reload prompt hook.
+/// The reload-signal endpoint the shell polls (design section 4.3).
 const RELOAD_PATH: &str = "/.mdp/reload";
 
-/// Serve `doc` on `port` (0 picks an ephemeral port), print the bound URL to
-/// stdout, and optionally open the system browser. Runs the request loop and
-/// returns only on a fatal error; otherwise the process is stopped with Ctrl-C.
-pub fn serve(doc: &RenderedDoc, port: u16, open_browser: bool) -> Result<(), ServeError> {
+/// Serve `render`'s output on `port` (0 picks an ephemeral port), print the
+/// bound URL to stdout, and optionally open the system browser. The document
+/// route re-renders on each request; a non-empty `watch_paths` enables the
+/// change flag that drives the reload banner. Runs the request loop and returns
+/// only on a fatal error; otherwise the process stops with Ctrl-C.
+pub fn serve<F>(
+    render: F,
+    watch_paths: &[PathBuf],
+    port: u16,
+    open_browser: bool,
+) -> Result<(), ServeError>
+where
+    F: Fn() -> RenderedDoc + Send + Sync + 'static,
+{
     let (server, url) = bind(port)?;
+    let changed = Arc::new(AtomicBool::new(false));
+    let _watch = start_watch(watch_paths, changed.clone());
 
-    // The URL goes to stdout so a calling tool (e.g. Claude Code) can capture it;
-    // human-facing status goes to stderr.
+    // The URL goes to stdout so a calling tool can capture it; status to stderr.
     println!("{url}");
-    eprintln!("mdp: serving \"{}\" at {url} (Ctrl-C to stop)", doc.title);
-
+    eprintln!("mdp: serving at {url} (Ctrl-C to stop)");
     if open_browser {
         if let Err(e) = webbrowser::open(&url) {
             eprintln!("mdp: could not open a browser ({e}); open {url} manually.");
@@ -38,19 +54,47 @@ pub fn serve(doc: &RenderedDoc, port: u16, open_browser: bool) -> Result<(), Ser
     }
 
     for request in server.incoming_requests() {
-        let reply = reply(request.url(), &doc.html);
-        let response = Response::from_string(reply.body)
-            .with_status_code(reply.status)
-            .with_header(
-                Header::from_bytes(b"Content-Type".as_ref(), reply.content_type.as_bytes())
-                    .expect("static content-type header is always valid"),
-            );
+        let response = match route(request.url()) {
+            Route::Document => {
+                let doc = render();
+                // Fresh content served: the reader is now up to date.
+                changed.store(false, Ordering::SeqCst);
+                html_response(200, "text/html; charset=utf-8", doc.html)
+            }
+            Route::Reload => {
+                html_response(
+                    200,
+                    "application/json; charset=utf-8",
+                    reload_body(changed.load(Ordering::SeqCst)),
+                )
+            }
+            Route::NotFound => html_response(
+                404,
+                "text/plain; charset=utf-8",
+                format!("not found: {}", request.url()),
+            ),
+        };
         // A dropped connection on one request must not take the server down.
         if let Err(e) = request.respond(response) {
             eprintln!("mdp: request failed: {e}");
         }
     }
     Ok(())
+}
+
+/// Start watching `paths` (if any), flipping `changed` on each debounced change.
+/// A watch-setup failure is non-fatal: serving continues without live reload.
+fn start_watch(paths: &[PathBuf], changed: Arc<AtomicBool>) -> Option<WatchHandle> {
+    if paths.is_empty() {
+        return None;
+    }
+    match watch::watch_files(paths, move |_change| changed.store(true, Ordering::SeqCst)) {
+        Ok(handle) => Some(handle),
+        Err(e) => {
+            eprintln!("mdp: file watching disabled: {e}");
+            None
+        }
+    }
 }
 
 /// Bind a loopback server on `port` and return it with its
@@ -67,37 +111,41 @@ fn bind(port: u16) -> Result<(Server, String), ServeError> {
     Ok((server, url))
 }
 
-/// One resolved reply: status, content type, and body. Pure over the request
-/// path and the document, so routing is unit-testable without a live socket.
-struct Reply {
-    status: u16,
-    content_type: &'static str,
-    body: String,
+/// Request routing. Pure over the path, so it is unit-testable.
+#[derive(Debug, PartialEq, Eq)]
+enum Route {
+    Document,
+    Reload,
+    NotFound,
 }
 
-/// Route a request path to its reply. Only `/` serves the (self-contained)
-/// document; the reload endpoint is a Phase 3 stub; everything else is a 404.
-fn reply(raw_path: &str, doc_html: &str) -> Reply {
-    // Strip any query string (e.g. a cache-buster on the reload poll).
+fn route(raw_path: &str) -> Route {
+    // Strip any query string (e.g. a cache-buster).
     let path = raw_path.split('?').next().unwrap_or(raw_path);
     match path {
-        "/" | "" | "/index.html" => Reply {
-            status: 200,
-            content_type: "text/html; charset=utf-8",
-            body: doc_html.to_owned(),
-        },
-        RELOAD_PATH => Reply {
-            status: 200,
-            content_type: "application/json; charset=utf-8",
-            // Phase 5 will report real changes here; for now, never reload.
-            body: "{\"changed\":false}".to_owned(),
-        },
-        other => Reply {
-            status: 404,
-            content_type: "text/plain; charset=utf-8",
-            body: format!("not found: {other}"),
-        },
+        "/" | "" | "/index.html" => Route::Document,
+        RELOAD_PATH => Route::Reload,
+        _ => Route::NotFound,
     }
+}
+
+/// The reload endpoint's JSON body for a given changed state.
+fn reload_body(changed: bool) -> String {
+    if changed {
+        "{\"changed\":true}".to_string()
+    } else {
+        "{\"changed\":false}".to_string()
+    }
+}
+
+/// Build a tiny_http response with a status, content type, and body.
+fn html_response(status: u16, content_type: &str, body: String) -> Response<Cursor<Vec<u8>>> {
+    Response::from_string(body)
+        .with_status_code(status)
+        .with_header(
+            Header::from_bytes(b"Content-Type".as_ref(), content_type.as_bytes())
+                .expect("static content-type header is always valid"),
+        )
 }
 
 /// Errors the serve frontend reports to the CLI.
@@ -125,37 +173,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn root_serves_the_document() {
-        let r = reply("/", "<html>DOC</html>");
-        assert_eq!(r.status, 200);
-        assert_eq!(r.content_type, "text/html; charset=utf-8");
-        assert!(r.body.contains("DOC"));
+    fn document_paths_route_to_the_document() {
+        assert_eq!(route("/"), Route::Document);
+        assert_eq!(route(""), Route::Document);
+        assert_eq!(route("/index.html"), Route::Document);
+        assert_eq!(route("/?t=123"), Route::Document);
     }
 
     #[test]
-    fn index_and_empty_paths_serve_the_document() {
-        assert_eq!(reply("/index.html", "D").status, 200);
-        assert_eq!(reply("", "D").status, 200);
+    fn reload_path_routes_to_reload() {
+        assert_eq!(route(RELOAD_PATH), Route::Reload);
+        assert_eq!(route("/.mdp/reload?x=1"), Route::Reload);
     }
 
     #[test]
-    fn query_string_is_ignored() {
-        assert_eq!(reply("/?t=123", "D").status, 200);
+    fn unknown_path_is_not_found() {
+        assert_eq!(route("/nope"), Route::NotFound);
     }
 
     #[test]
-    fn reload_endpoint_is_a_stub() {
-        let r = reply(RELOAD_PATH, "D");
-        assert_eq!(r.status, 200);
-        assert_eq!(r.content_type, "application/json; charset=utf-8");
-        assert!(r.body.contains("\"changed\":false"));
-    }
-
-    #[test]
-    fn unknown_path_is_404() {
-        let r = reply("/nope", "D");
-        assert_eq!(r.status, 404);
-        assert!(r.body.contains("not found"));
+    fn reload_body_reflects_state() {
+        assert!(reload_body(true).contains("\"changed\":true"));
+        assert!(reload_body(false).contains("\"changed\":false"));
     }
 
     #[test]
@@ -170,5 +209,10 @@ mod tests {
             .expect("numeric port in url");
         assert!(port > 0, "ephemeral port should be non-zero");
         drop(server);
+    }
+
+    #[test]
+    fn start_watch_is_none_without_paths() {
+        assert!(start_watch(&[], Arc::new(AtomicBool::new(false))).is_none());
     }
 }

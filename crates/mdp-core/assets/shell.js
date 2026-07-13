@@ -88,8 +88,50 @@
     sync();
   }
 
+  /* Smart reload (design section 4.3). Poll the frontend's reload endpoint; when
+   * it reports the file changed on disk, reveal a non-intrusive banner. We NEVER
+   * swap content on our own - the reader clicks Reload (or Dismiss). Polling a
+   * relative endpoint fails harmlessly for a statically opened file (no server),
+   * so live reload is simply absent there. */
+  function setupReload() {
+    var banner = document.getElementById("mdp-reload-banner");
+    if (!banner) {
+      return;
+    }
+    var accept = document.getElementById("mdp-reload-accept");
+    var dismiss = document.getElementById("mdp-reload-dismiss");
+    var dismissed = false;
+    if (accept) {
+      accept.addEventListener("click", function () {
+        window.location.reload();
+      });
+    }
+    if (dismiss) {
+      dismiss.addEventListener("click", function () {
+        banner.hidden = true;
+        dismissed = true;
+      });
+    }
+    function poll() {
+      fetch("/.mdp/reload", { cache: "no-store" })
+        .then(function (r) {
+          return r.ok ? r.json() : null;
+        })
+        .then(function (data) {
+          if (data && data.changed && !dismissed) {
+            banner.hidden = false;
+          }
+        })
+        .catch(function () {
+          /* No server (e.g. a static file): live reload is unavailable. */
+        });
+    }
+    setInterval(poll, 1000);
+  }
+
   function ready() {
     setupViewToggle();
+    setupReload();
     renderMath();
     renderMermaid()
       .catch(function () {})

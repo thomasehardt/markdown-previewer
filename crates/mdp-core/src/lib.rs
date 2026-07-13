@@ -19,6 +19,11 @@
 //! server-side syntect syntax highlighting, KaTeX math (base64-inlined fonts),
 //! and lazy Mermaid diagrams (Phase 2). Math and Mermaid assets are injected
 //! only when the document actually uses them, so plain documents stay lean.
+//!
+//! The [`watch`] submodule adds cross-platform file watching (design section
+//! 4.3); it is the one stateful, I/O-touching part of this otherwise pure crate.
+
+pub mod watch;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -392,6 +397,7 @@ fn assemble_page(body: &str, source_md: &str, title: &str, opts: &RenderOptions)
 {user_theme}<style data-mdp=\"shell\">{shell_css}</style>\n\
 {head_extra}</head>\n\
 <body{body_class}>\n\
+<div id=\"mdp-reload-banner\" class=\"mdp-reload-banner\" role=\"status\" hidden>This file changed on disk. <button type=\"button\" id=\"mdp-reload-accept\">Reload</button> <button type=\"button\" id=\"mdp-reload-dismiss\">Dismiss</button></div>\n\
 <button type=\"button\" id=\"mdp-view-toggle\" class=\"mdp-view-toggle\" aria-pressed=\"false\">View source</button>\n\
 <main class=\"mdp-document\">\n\
 {body}</main>\n\
