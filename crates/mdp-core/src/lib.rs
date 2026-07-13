@@ -13,15 +13,30 @@
 //! consumes byte-for-byte. There is no windowing, async, or I/O here beyond
 //! reading embedded assets.
 //!
-//! Phase 1 scope (design section 9): CommonMark plus GFM (tables, task lists,
+//! Scope (design section 9): CommonMark plus GFM (tables, task lists,
 //! strikethrough, autolink, tagfilter, footnotes, alerts), ammonia
-//! sanitization, and the token-based neutral default theme. Syntax
-//! highlighting, math, and Mermaid are Phase 2 and are intentionally absent;
-//! code fences render as plain `<pre><code>` styled by the theme.
+//! sanitization, and the token-based neutral default theme (Phase 1); plus
+//! server-side syntect syntax highlighting, KaTeX math (base64-inlined fonts),
+//! and lazy Mermaid diagrams (Phase 2). Math and Mermaid assets are injected
+//! only when the document actually uses them, so plain documents stay lean.
 
 use std::borrow::Cow;
+use std::collections::HashMap;
+use std::fmt::{self, Write as _};
+use std::sync::OnceLock;
 
+use comrak::adapters::SyntaxHighlighterAdapter;
 use rust_embed::RustEmbed;
+use syntect::highlighting::{Theme, ThemeSet};
+use syntect::html::{css_for_theme_with_class_style, ClassStyle, ClassedHTMLGenerator};
+use syntect::parsing::SyntaxSet;
+use syntect::util::LinesWithEndings;
+
+/// CSS class prefix for every syntect-emitted highlight span. Prefixing keeps
+/// the highlighter's generic scope atoms (`keyword`, `string`, ...) from
+/// colliding with the shell's own class names, and lets the generated theme
+/// CSS target exactly these spans. It must be a `&'static str` (syntect API).
+const HL_PREFIX: &str = "mdp-hl-";
 
 /// Embedded shell/theme assets. In debug builds rust-embed reads these from
 /// disk (fast iteration); in release they are folded into the binary
@@ -87,8 +102,17 @@ pub fn render_document(markdown: &str, opts: &RenderOptions) -> RenderedDoc {
 
 /// Parse and render Markdown with comrak. Raw inline HTML stays disabled
 /// (`render.unsafe_` off), so `<script>` and friends are escaped to text and
-/// the tagfilter neutralizes the dangerous GFM tag set. Math is left as
-/// `$...$` wrappers for a future KaTeX pass; comrak does not render it.
+/// the tagfilter neutralizes the dangerous GFM tag set.
+///
+/// Two Phase-2 behaviors are wired here:
+///
+/// - `math_dollars` turns `$x$` / `$$x$$` into
+///   `<span data-math-style="inline|display">x</span>` (the `$` delimiters are
+///   consumed, so client-side rendering keys off `data-math-style`, not the
+///   dollar signs; see `assets/shell.js`). comrak does not render math itself.
+/// - A syntect [`SyntectAdapter`] highlights fenced code server-side into
+///   class-based spans, with `mermaid` fences passed through untouched for the
+///   client-side diagram step.
 fn markdown_to_html(markdown: &str) -> String {
     let mut options = comrak::Options::default();
 
@@ -100,10 +124,151 @@ fn markdown_to_html(markdown: &str) -> String {
     options.extension.tagfilter = true;
     options.extension.footnotes = true;
     options.extension.alerts = true;
+    // Inline + display math passthrough for KaTeX (design section 4.1). Only
+    // `math_dollars`; `math_code` (```math fences) is intentionally left off so
+    // the single client selector `[data-math-style]` covers all math.
+    options.extension.math_dollars = true;
 
     // render.unsafe_ stays false (the default): raw HTML is escaped/suppressed.
 
-    comrak::markdown_to_html(markdown, &options)
+    let highlighter = highlighter();
+    let adapter = SyntectAdapter { hl: highlighter };
+    let mut plugins = comrak::options::Plugins::default();
+    plugins.render.codefence_syntax_highlighter = Some(&adapter);
+
+    comrak::markdown_to_html_with_plugins(markdown, &options, &plugins)
+}
+
+/// Cached, process-wide syntect syntax and theme sets. Loading the default
+/// syntax/theme dumps is the expensive part of highlighting, so it happens
+/// exactly once (design section 4.1: cache assembled per-process state).
+struct Highlighter {
+    syntaxes: SyntaxSet,
+    /// Light-scheme theme; its span colors apply at top level.
+    light: Theme,
+    /// Dark-scheme theme; its span colors apply under the dark scope selectors.
+    dark: Theme,
+}
+
+fn highlighter() -> &'static Highlighter {
+    static H: OnceLock<Highlighter> = OnceLock::new();
+    H.get_or_init(|| {
+        let syntaxes = SyntaxSet::load_defaults_newlines();
+        let themes = ThemeSet::load_defaults();
+        // Two built-in themes whose backgrounds are close to the default
+        // theme's --code-bg tokens, so the foreground colors read correctly
+        // against the token-driven code surface without syntect owning the
+        // background (which would fight the theme layer, design section 4.6).
+        let light = themes.themes["InspiredGitHub"].clone();
+        let dark = themes.themes["base16-ocean.dark"].clone();
+        Highlighter {
+            syntaxes,
+            light,
+            dark,
+        }
+    })
+}
+
+/// comrak codefence highlighter backed by pure-Rust syntect. It emits
+/// class-based spans (prefixed with [`HL_PREFIX`]); the matching colors ship as
+/// inlined CSS from [`syntect_theme_css`]. `mermaid` fences are passed through
+/// as an escaped `<code class="language-mermaid">` body for the client-side
+/// Mermaid step (design section 4.1, step 2).
+struct SyntectAdapter {
+    hl: &'static Highlighter,
+}
+
+impl SyntectAdapter {
+    /// Highlight `code` in `lang` into class-based `<span>`s. Falls back to
+    /// plaintext syntax for unknown languages, and to a plainly escaped block
+    /// if the highlighter errors (so code is never dropped).
+    fn highlight(&self, lang: &str, code: &str) -> String {
+        let syntax = self
+            .hl
+            .syntaxes
+            .find_syntax_by_token(lang)
+            .unwrap_or_else(|| self.hl.syntaxes.find_syntax_plain_text());
+        let mut generator = ClassedHTMLGenerator::new_with_class_style(
+            syntax,
+            &self.hl.syntaxes,
+            ClassStyle::SpacedPrefixed { prefix: HL_PREFIX },
+        );
+        for line in LinesWithEndings::from(code) {
+            if generator
+                .parse_html_for_line_which_includes_newline(line)
+                .is_err()
+            {
+                return escape_html_text(code);
+            }
+        }
+        generator.finalize()
+    }
+}
+
+impl SyntaxHighlighterAdapter for SyntectAdapter {
+    fn write_highlighted(
+        &self,
+        output: &mut dyn fmt::Write,
+        lang: Option<&str>,
+        code: &str,
+    ) -> fmt::Result {
+        let lang = lang.unwrap_or("").trim();
+        if lang.eq_ignore_ascii_case("mermaid") {
+            // Pass the diagram source through verbatim (escaped) so the
+            // client-side Mermaid step can read it as text.
+            return output.write_str(&escape_html_text(code));
+        }
+        output.write_str(&self.highlight(lang, code))
+    }
+
+    fn write_pre_tag(
+        &self,
+        output: &mut dyn fmt::Write,
+        attributes: HashMap<&'static str, Cow<'_, str>>,
+    ) -> fmt::Result {
+        write_open_tag(output, "pre", &attributes)
+    }
+
+    fn write_code_tag(
+        &self,
+        output: &mut dyn fmt::Write,
+        attributes: HashMap<&'static str, Cow<'_, str>>,
+    ) -> fmt::Result {
+        // Preserve comrak's `class="language-*"` (carries `language-mermaid`
+        // and the fence language for both styling and downstream steps).
+        write_open_tag(output, "code", &attributes)
+    }
+}
+
+/// Write an opening tag with its attributes in a deterministic (key-sorted)
+/// order so output is stable for snapshot tests. Attribute values are escaped.
+fn write_open_tag(
+    output: &mut dyn fmt::Write,
+    tag: &str,
+    attributes: &HashMap<&'static str, Cow<'_, str>>,
+) -> fmt::Result {
+    write!(output, "<{tag}")?;
+    let mut keys: Vec<&&str> = attributes.keys().collect();
+    keys.sort();
+    for key in keys {
+        write!(output, " {key}=\"{}\"", escape_attr(&attributes[*key]))?;
+    }
+    output.write_str(">")
+}
+
+/// Escape text for placement inside an element body.
+fn escape_html_text(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// Escape text for placement inside a double-quoted attribute value.
+fn escape_attr(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 /// The authoritative security step (design section 4.1/4.6). ammonia rebuilds
@@ -116,9 +281,15 @@ fn markdown_to_html(markdown: &str) -> String {
 ///   and the `id`/`href` fragment links that stitch refs to definitions
 /// - tables with per-column alignment
 /// - fenced-code language classes (`language-*`, including `language-mermaid`)
+/// - syntect highlight spans: `<span>` (already a default tag) carrying the
+///   `mdp-hl-*` classes (the generic `class` attribute preserves them)
+/// - math wrappers: `<span data-math-style="inline|display">` from comrak's
+///   `math_dollars`, which KaTeX auto-render keys off client-side
 ///
 /// Everything else (`script`, `style`, event handlers, `javascript:` URLs,
-/// `iframe`, ...) is stripped.
+/// `iframe`, ...) is stripped. Mermaid's `<svg>` is generated client-side
+/// *after* sanitize, so no inline-svg allowlist is needed; only the mermaid
+/// code block must survive here, which it does as `<pre><code>` + `class`.
 fn sanitize(html: &str) -> String {
     let mut builder = ammonia::Builder::default();
 
@@ -126,10 +297,14 @@ fn sanitize(html: &str) -> String {
         // Tags beyond ammonia's defaults that comrak's feature output needs.
         .add_tags(["input", "section"])
         // class/id are safe, non-scripting attributes and are what carry the
-        // feature semantics (alert type, footnote linking, code language).
+        // feature semantics (alert type, footnote linking, code language, and
+        // the syntect `mdp-hl-*` highlight classes).
         .add_generic_attributes(["class", "id"])
         // Task-list checkbox attributes.
         .add_tag_attributes("input", ["type", "checked", "disabled"])
+        // comrak math_dollars wrapper: display/inline marker on the math span.
+        // This is the exact hook KaTeX auto-render selects on client-side.
+        .add_tag_attributes("span", ["data-math-style"])
         // Table column alignment.
         .add_tag_attributes("th", ["align"])
         .add_tag_attributes("td", ["align"])
@@ -140,9 +315,13 @@ fn sanitize(html: &str) -> String {
 }
 
 /// Assemble the sanitized body into a self-contained HTML page: the inlined
-/// token-based default theme, any layered user theme, the app-shell CSS, and
-/// the tiny shell script. The `data-mdp="..."` markers let tests redact the
-/// large asset blobs (design section 7) while keeping the body reviewable.
+/// token-based default theme, any layered user theme, the app-shell CSS/JS,
+/// and - only when the document actually uses them - the syntect highlight
+/// theme CSS, KaTeX (base64-inlined fonts, JS), and Mermaid (design section
+/// 4.1, step 3). Injecting per-feature keeps a plain document's output lean.
+///
+/// The `data-mdp="..."` markers let tests redact the large asset blobs (design
+/// section 7) while keeping the Markdown-derived body reviewable.
 fn assemble_page(body: &str, title: &str, opts: &RenderOptions) -> String {
     let theme_css = load_asset("theme.css");
     let shell_css = load_asset("shell.css");
@@ -159,6 +338,39 @@ fn assemble_page(body: &str, title: &str, opts: &RenderOptions) -> String {
         None => String::new(),
     };
 
+    // Feature detection over the sanitized body. These substrings are produced
+    // only by the pipeline (highlight prefix, comrak math marker, the mermaid
+    // code class), never by arbitrary user prose, so they are safe triggers.
+    let has_highlight = body.contains(HL_PREFIX);
+    let has_math = body.contains("data-math-style");
+    let has_mermaid = body.contains("language-mermaid");
+
+    // Head extras: highlight CSS, then KaTeX (style + lib). KaTeX's script is
+    // in <head> so its `katex` global is defined before the body-end shell
+    // script that renders the math.
+    let mut head_extra = String::new();
+    if has_highlight {
+        let _ = writeln!(
+            head_extra,
+            "<style data-mdp=\"syntect\">{}</style>",
+            syntect_theme_css()
+        );
+    }
+    if has_math {
+        if let Some(block) = katex_assets() {
+            head_extra.push_str(block);
+        }
+    }
+
+    // Body-end extras: Mermaid lib + init, only when a mermaid fence exists
+    // (design section 5: lazy Mermaid init). Placed before the shell script.
+    let mut body_extra = String::new();
+    if has_mermaid {
+        if let Some(block) = mermaid_assets() {
+            body_extra.push_str(block);
+        }
+    }
+
     format!(
         "<!doctype html>\n\
 <html lang=\"en\"{scheme_attr}>\n\
@@ -168,11 +380,11 @@ fn assemble_page(body: &str, title: &str, opts: &RenderOptions) -> String {
 <title>{title}</title>\n\
 <style data-mdp=\"theme\">{theme_css}</style>\n\
 {user_theme}<style data-mdp=\"shell\">{shell_css}</style>\n\
-</head>\n\
+{head_extra}</head>\n\
 <body>\n\
 <main class=\"mdp-document\">\n\
 {body}</main>\n\
-<script data-mdp=\"shell\">{shell_js}</script>\n\
+{body_extra}<script data-mdp=\"shell\">{shell_js}</script>\n\
 </body>\n\
 </html>\n",
         scheme_attr = scheme_attr,
@@ -180,24 +392,122 @@ fn assemble_page(body: &str, title: &str, opts: &RenderOptions) -> String {
         theme_css = theme_css,
         user_theme = user_theme,
         shell_css = shell_css,
+        head_extra = head_extra,
         body = body,
+        body_extra = body_extra,
         shell_js = shell_js,
     )
+}
+
+/// The inlined syntect highlight theme CSS, built once. The light theme's span
+/// colors apply at top level; the dark theme's colors are re-scoped under the
+/// dark-scheme selectors (auto via `prefers-color-scheme`, or forced via
+/// `data-color-scheme="dark"`) so highlighting tracks the page color scheme.
+fn syntect_theme_css() -> &'static str {
+    static CSS: OnceLock<String> = OnceLock::new();
+    CSS.get_or_init(|| {
+        let hl = highlighter();
+        let style = ClassStyle::SpacedPrefixed { prefix: HL_PREFIX };
+        let light = css_for_theme_with_class_style(&hl.light, style).unwrap_or_default();
+        let dark = css_for_theme_with_class_style(&hl.dark, style).unwrap_or_default();
+        let dark_auto = prefix_selectors(&dark, ":root:not([data-color-scheme=\"light\"])");
+        let dark_forced = prefix_selectors(&dark, ":root[data-color-scheme=\"dark\"]");
+        format!(
+            "{light}\n@media (prefers-color-scheme: dark) {{\n{dark_auto}}}\n{dark_forced}"
+        )
+    })
+}
+
+/// Re-scope a syntect-generated stylesheet under an ancestor selector by
+/// prepending `ancestor` to every selector in every rule. The leading theme
+/// comment is dropped. This lets the dark theme's rules win (higher
+/// specificity) only when the ancestor matches, without touching the flat
+/// light-theme rules.
+fn prefix_selectors(css: &str, ancestor: &str) -> String {
+    // Drop syntect's leading `/* ... */` comment if present.
+    let body = match css.find("*/") {
+        Some(i) => &css[i + 2..],
+        None => css,
+    };
+    let mut out = String::new();
+    for rule in body.split_inclusive('}') {
+        let Some(brace) = rule.find('{') else {
+            continue; // trailing whitespace after the last rule
+        };
+        let (selectors, block) = rule.split_at(brace);
+        let scoped: Vec<String> = selectors
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("{ancestor} {s}"))
+            .collect();
+        if scoped.is_empty() {
+            continue;
+        }
+        out.push_str(&scoped.join(", "));
+        out.push(' ');
+        out.push_str(block);
+        out.push('\n');
+    }
+    out
+}
+
+/// The assembled KaTeX head block (inlined stylesheet with base64 fonts, plus
+/// the KaTeX library), built once. Returns `None` when the vendored assets are
+/// not present (a fresh checkout that has not run scripts/vendor-assets.sh), so
+/// the page still assembles - math simply stays as its `$`-free source text.
+fn katex_assets() -> Option<&'static str> {
+    static BLOCK: OnceLock<Option<String>> = OnceLock::new();
+    BLOCK
+        .get_or_init(|| {
+            let css = try_load_asset("vendor/katex/katex.inlined.css")?;
+            let js = try_load_asset("vendor/katex/katex.min.js")?;
+            Some(format!(
+                "<style data-mdp=\"katex\">{css}</style>\n\
+<script data-mdp=\"katex-lib\">{js}</script>\n"
+            ))
+        })
+        .as_deref()
+}
+
+/// The assembled Mermaid body block (library plus a conservative init), built
+/// once. `startOnLoad:false` defers rendering to the shell script; the strict
+/// security level blocks click handlers and sanitizes HTML labels (design
+/// section 4.1). Returns `None` when the vendored bundle is absent.
+fn mermaid_assets() -> Option<&'static str> {
+    static BLOCK: OnceLock<Option<String>> = OnceLock::new();
+    BLOCK
+        .get_or_init(|| {
+            let js = try_load_asset("vendor/mermaid/mermaid.min.js")?;
+            Some(format!(
+                "<script data-mdp=\"mermaid-lib\">{js}</script>\n\
+<script data-mdp=\"mermaid-init\">mermaid.initialize({{startOnLoad:false,securityLevel:\"strict\"}});</script>\n"
+            ))
+        })
+        .as_deref()
 }
 
 /// Load an embedded text asset. Panics only if a compiled-in asset is missing,
 /// which is a build/packaging bug, not a runtime input error.
 fn load_asset(name: &str) -> Cow<'static, str> {
-    let file = Assets::get(name)
-        .unwrap_or_else(|| panic!("embedded asset missing: {name} (packaging bug)"));
-    match file.data {
+    try_load_asset(name)
+        .unwrap_or_else(|| panic!("embedded asset missing: {name} (packaging bug)"))
+}
+
+/// Load an embedded text asset if present, returning `None` when it is absent.
+/// Used for the optional vendored assets (KaTeX, Mermaid), which live in a
+/// gitignored tree populated by scripts/vendor-assets.sh and may be missing on
+/// a fresh checkout.
+fn try_load_asset(name: &str) -> Option<Cow<'static, str>> {
+    let file = Assets::get(name)?;
+    Some(match file.data {
         Cow::Borrowed(bytes) => Cow::Borrowed(
             std::str::from_utf8(bytes).expect("embedded asset is not valid UTF-8"),
         ),
         Cow::Owned(bytes) => {
             Cow::Owned(String::from_utf8(bytes).expect("embedded asset is not valid UTF-8"))
         }
-    }
+    })
 }
 
 /// Minimal escaping for text placed inside `<title>`.
@@ -291,5 +601,74 @@ mod tests {
     fn no_user_theme_block_when_none() {
         let doc = render_document("hi", &RenderOptions::default());
         assert!(!doc.html.contains("data-mdp=\"user-theme\""));
+    }
+
+    /// rust-embed reads `assets/` from disk in debug builds, so the gitignored
+    /// `assets/vendor/` tree (populated by scripts/vendor-assets.sh) is visible
+    /// to the same loader that serves the shell/theme files. .gitignore only
+    /// affects git, not rust-embed's disk reads. This proves a vendored file is
+    /// retrievable through the existing loader once vendoring has run.
+    ///
+    /// It skips (rather than fails) when the assets are not vendored yet, so a
+    /// fresh checkout that has not run the vendor script still builds green.
+    /// The vendoring itself is verified end-to-end by scripts/vendor-assets.sh.
+    #[test]
+    fn vendored_asset_is_retrievable_when_present() {
+        let key = "vendor/mermaid/mermaid.min.js";
+        match Assets::get(key) {
+            None => {
+                eprintln!(
+                    "skipping: {key} not vendored yet (run scripts/vendor-assets.sh)"
+                );
+            }
+            Some(file) => {
+                assert!(
+                    !file.data.is_empty(),
+                    "vendored {key} should not be empty"
+                );
+                // mermaid.min.js is a multi-MB prebuilt UMD bundle.
+                assert!(
+                    file.data.len() > 1_000_000,
+                    "vendored {key} is suspiciously small ({} bytes)",
+                    file.data.len()
+                );
+                // It is UTF-8 JS, so the text loader path also works on it.
+                let js = load_asset(key);
+                assert!(
+                    js.contains("mermaid"),
+                    "vendored bundle should mention mermaid"
+                );
+            }
+        }
+    }
+
+    /// The precomputed self-contained KaTeX stylesheet must carry zero relative
+    /// or external font references (design section 4.1/5): every font is a
+    /// base64 data: URI. Skips when not vendored yet.
+    #[test]
+    fn inlined_katex_css_is_self_contained_when_present() {
+        let key = "vendor/katex/katex.inlined.css";
+        match Assets::get(key) {
+            None => {
+                eprintln!(
+                    "skipping: {key} not vendored yet (run scripts/vendor-assets.sh)"
+                );
+            }
+            Some(_) => {
+                let css = load_asset(key);
+                assert!(
+                    !css.contains("url(fonts/"),
+                    "inlined css must not reference relative font paths"
+                );
+                assert!(
+                    !css.contains("http://") && !css.contains("https://"),
+                    "inlined css must not reference external URLs"
+                );
+                assert!(
+                    css.contains("data:font/woff2;base64,"),
+                    "inlined css must embed fonts as base64 data URIs"
+                );
+            }
+        }
     }
 }

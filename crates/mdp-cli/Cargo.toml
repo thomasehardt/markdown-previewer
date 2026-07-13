@@ -15,10 +15,18 @@ path = "src/main.rs"
 [dependencies]
 mdp-core = { workspace = true }
 clap = { version = "4", features = ["derive"] }
+# config.toml parsing for persistent defaults (default theme + scheme),
+# design section 6. serde derive + toml, both permissively licensed.
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
 # Frontends are optional and selected by feature (design section 2). They are
 # minimal compiling placeholders for Phase 1 and get fleshed out later.
 mdp-webview = { workspace = true, optional = true }
 mdp-serve = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Real temp dirs for config-loading tests (no touching the user's real config).
+tempfile = "3"
 
 [features]
 default = ["webview"]

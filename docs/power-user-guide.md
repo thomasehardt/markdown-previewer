@@ -1,0 +1,111 @@
+# mdp power-user guide
+
+Advanced usage: the full command surface, authoring themes, the config file, and
+how the offline asset vendoring works. For everyday use see the
+[user guide](user-guide.md); for the full architecture see
+[the design](design.md).
+
+## Command reference
+
+```
+mdp [OPTIONS] [FILE]...                 preview (default path: native webview)
+mdp view  [FILE]... [--frontend ...]    explicit preview
+mdp serve [FILE]... [--port N] [--no-open]   local server (later phase)
+mdp export <FILE> --to <OUT>            export to HTML/PDF (later phase)
+```
+
+Global options (apply to every path):
+
+| Option | Meaning |
+|---|---|
+| `--theme <PATH>` | Layer a theme CSS file over the built-in default. |
+| `--scheme <auto\|light\|dark>` | Color scheme. Unset follows `config.toml`, then the OS. |
+| `--no-watch` | Disable file watching (wired for a later phase). |
+| `--view-source-default` | Open showing raw source (wired for a later phase). |
+
+Status today: the default path and `view --frontend webview` open the native
+window. `view --frontend serve`, `serve`, and `export` are parsed and validated
+but report that their frontend lands in a later phase (they exit non-zero rather
+than pretend). `--help` and `--version` work.
+
+## Authoring a theme
+
+The layout and prose CSS reference only **semantic tokens**, so a theme is just
+a small CSS file that redefines the tokens you care about. Everything you do not
+override inherits from the neutral default.
+
+Core tokens:
+
+| Token | Role |
+|---|---|
+| `--accent` | Links and accents. |
+| `--text-body`, `--text-heading` | Body and heading text. |
+| `--surface-page`, `--surface-card` | Page and raised-surface backgrounds. |
+| `--font-body`, `--font-heading`, `--font-mono` | Font stacks. |
+| `--space-*`, `--radius-*` | Spacing and corner-radius scale. |
+
+A minimal theme:
+
+```css
+:root {
+  --accent: #2f6f4f;
+  --font-body: "Iowan Old Style", Georgia, serif;
+}
+```
+
+Because a theme only changes token *values*, the rendered document structure is
+identical with or without it (there is a test that guarantees this). Define both
+light and dark in one theme via `prefers-color-scheme`, or scope overrides under
+`:root[data-color-scheme="dark"]` to match the `--scheme` flag.
+
+## config.toml
+
+Persistent defaults live in `config.toml` in the platform config directory:
+
+- Linux and macOS: `~/.config/mdp/config.toml` (honors `XDG_CONFIG_HOME`)
+- Windows: `%APPDATA%\mdp\config.toml`
+- Override the directory with the `MDP_CONFIG_DIR` environment variable.
+
+```toml
+# paths are used as-is (no shell ~ expansion); prefer an absolute path
+theme = "/home/you/.config/mdp/themes/night.css"
+scheme = "dark"
+```
+
+Resolution precedence is **CLI flag > config.toml > built-in default**. Unknown
+keys are rejected: a typo produces a warning and the tool falls back to defaults
+rather than silently ignoring it. A missing or malformed config never blocks a
+preview.
+
+This is also how you keep a private, branded theme (for example a Sherpas theme)
+outside the repo: put the CSS in your own space and point `config.toml` at it.
+
+## Offline asset vendoring
+
+Math (KaTeX) and diagrams (Mermaid) need bundled front-end assets. To keep the
+repo free of large binary blobs, they are **not** committed. Instead:
+
+- `scripts/vendor-assets.sh` fetches pinned versions into
+  `crates/mdp-core/assets/vendor/` (gitignored).
+- `scripts/assets-manifest.toml` pins the versions and sha256 of every file; the
+  script verifies each download against it and fails loudly on a mismatch.
+- The script also precomputes `katex.inlined.css` with every font as a base64
+  `data:` URI, so the rendered page has zero external font references.
+- `THIRD-PARTY-LICENSES.md` carries the bundled projects' license texts.
+
+`rust-embed` reads these from disk in debug builds and folds them into the binary
+in release builds, so the shipped tool is fully offline. To update a version,
+edit `scripts/assets-manifest.toml` and re-run the script.
+
+## Build, test, coverage
+
+```sh
+cargo build --workspace
+cargo test  --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo llvm-cov -p mdp-core --summary-only     # or: cargo cov
+```
+
+Coverage concentrates in `mdp-core` (the pure render pipeline); frontends are
+thin glue and excluded from the target. Cargo features select the frontend:
+`webview` (default) and `serve`.

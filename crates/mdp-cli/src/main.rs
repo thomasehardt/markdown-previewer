@@ -6,11 +6,14 @@
 //! `serve` and `export` are wired into the clap surface but their frontends
 //! land in later phases, so they report that plainly instead of pretending.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use mdp_core::{ColorScheme, RenderOptions};
+
+mod config;
+use config::Config;
 
 #[derive(Parser)]
 #[command(name = "mdp", version, about = "An elegant, fast Markdown previewer.")]
@@ -26,9 +29,9 @@ struct Cli {
     #[arg(long, value_name = "PATH", global = true)]
     theme: Option<PathBuf>,
 
-    /// Color scheme (default: auto, following the OS preference).
-    #[arg(long, value_enum, default_value_t = Scheme::Auto, global = true)]
-    scheme: Scheme,
+    /// Color scheme (overrides config; unset follows config then the OS).
+    #[arg(long, value_enum, global = true)]
+    scheme: Option<Scheme>,
 
     /// Disable file watching (no reload prompts). Wired for later phases.
     #[arg(long, global = true)]
@@ -71,8 +74,9 @@ enum Command {
     },
 }
 
-#[derive(Copy, Clone, ValueEnum)]
-enum Scheme {
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Scheme {
     Auto,
     Light,
     Dark,
@@ -96,6 +100,11 @@ impl From<Scheme> for ColorScheme {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    let config = Config::load();
+
+    // Resolve options with precedence CLI flag > config.toml > built-in default.
+    let theme = config::resolve_theme(cli.theme.clone(), config.theme.clone());
+    let scheme: ColorScheme = config::resolve_scheme(cli.scheme, config.scheme).into();
 
     // Resolve the target file and the frontend from whichever surface was used.
     // Phase 1 previews a single file; the surface accepts several so multi-file
@@ -119,7 +128,7 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     };
 
-    let doc = match render_file(&file, &cli) {
+    let doc = match render_file(&file, theme.as_deref(), scheme) {
         Ok(doc) => doc,
         Err(code) => return code,
     };
@@ -136,13 +145,17 @@ fn main() -> ExitCode {
 /// Read a Markdown file and render it to the self-contained document, applying
 /// the CLI's theme and color-scheme options. Returns the CLI exit code to use
 /// on any I/O failure.
-fn render_file(file: &PathBuf, cli: &Cli) -> Result<mdp_core::RenderedDoc, ExitCode> {
+fn render_file(
+    file: &Path,
+    theme: Option<&Path>,
+    scheme: ColorScheme,
+) -> Result<mdp_core::RenderedDoc, ExitCode> {
     let markdown = std::fs::read_to_string(file).map_err(|e| {
         eprintln!("mdp: cannot read {}: {e}", file.display());
         ExitCode::FAILURE
     })?;
 
-    let extra_theme_css = match &cli.theme {
+    let extra_theme_css = match theme {
         Some(theme_path) => Some(std::fs::read_to_string(theme_path).map_err(|e| {
             eprintln!("mdp: cannot read theme {}: {e}", theme_path.display());
             ExitCode::FAILURE
@@ -152,7 +165,7 @@ fn render_file(file: &PathBuf, cli: &Cli) -> Result<mdp_core::RenderedDoc, ExitC
 
     let opts = RenderOptions {
         title: file.file_name().map(|n| n.to_string_lossy().into_owned()),
-        color_scheme: cli.scheme.into(),
+        color_scheme: scheme,
         extra_theme_css,
     };
 
@@ -208,8 +221,12 @@ mod tests {
         let cli = Cli::try_parse_from(["mdp", "README.md"]).unwrap();
         assert!(cli.command.is_none());
         assert_eq!(cli.files, vec![PathBuf::from("README.md")]);
-        // Default color scheme is auto.
-        assert!(matches!(ColorScheme::from(cli.scheme), ColorScheme::Auto));
+        // No --scheme given: the flag is None and resolves to auto.
+        assert!(cli.scheme.is_none());
+        assert!(matches!(
+            config::resolve_scheme(cli.scheme, None),
+            Scheme::Auto
+        ));
     }
 
     #[test]
@@ -222,7 +239,7 @@ mod tests {
     fn global_flags_parse() {
         let cli =
             Cli::try_parse_from(["mdp", "--scheme", "dark", "--theme", "t.css", "x.md"]).unwrap();
-        assert!(matches!(ColorScheme::from(cli.scheme), ColorScheme::Dark));
+        assert!(matches!(cli.scheme, Some(Scheme::Dark)));
         assert_eq!(cli.theme, Some(PathBuf::from("t.css")));
         let cli = Cli::try_parse_from(["mdp", "--no-watch", "--view-source-default", "x.md"])
             .unwrap();

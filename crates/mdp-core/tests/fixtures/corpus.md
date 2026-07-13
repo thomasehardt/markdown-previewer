@@ -48,6 +48,22 @@ fn main() {
 > [!WARNING]
 > Be careful here.
 
+## Math
+
+Inline math $E = mc^2$ appears within a sentence, and a display equation is set
+on its own line:
+
+$$\int_0^1 x^2 \, dx = \frac{1}{3}$$
+
+## Diagram
+
+```mermaid
+graph TD;
+    A[Start] --> B{Choice};
+    B -->|yes| C[Do it];
+    B -->|no| D[Skip];
+```
+
 ## Footnote
 
 This claim needs a source.[^src]

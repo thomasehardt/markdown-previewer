@@ -11,18 +11,20 @@ to build and run it.
 
 ## Status
 
-Phase 1 of the [phased plan](docs/design.md) is implemented: the
+Phases 1 and 2 of the [phased plan](docs/design.md) are implemented. The
 display-agnostic core renders CommonMark plus GFM (tables, task lists,
 strikethrough, autolinks, tag filtering, footnotes, and alerts) into a fully
 self-contained HTML page, sanitized and styled by a neutral, token-based theme.
-The default `mdp <FILE>` path opens that page read-only in a native window
-(wry + tao): the window shows an instant spinner shell, then swaps in the
-rendered content once the webview serves it over an offline custom protocol.
+Fenced code is syntax-highlighted server-side (syntect), `$...$` and `$$...$$`
+math is typeset with KaTeX, and `mermaid` fenced blocks render as diagrams --
+all offline, with the KaTeX and Mermaid assets injected only when a document
+actually uses them. A `--theme` file and an optional `config.toml` customize the
+look. The default `mdp <FILE>` path opens the page read-only in a native window
+(wry + tao) behind an instant spinner shell.
 
-Not yet implemented (later phases): syntax highlighting, math (KaTeX),
-diagrams (Mermaid), the local-server frontend (`serve`), file watching, and
-HTML/PDF export (`export`). Fenced code renders as plain, theme-styled
-`<pre><code>` for now.
+Not yet implemented (later phases): a read-only "view source" toggle, the
+local-server frontend (`serve`), file watching with reload prompts, and
+HTML/PDF export (`export`).
 
 ## Architecture
 
@@ -51,7 +53,15 @@ core-to-frontend boundary is enforced at compile time.
 The toolchain is pinned by `rust-toolchain.toml` (Rust 1.97.0); rustup honors
 it automatically inside this directory.
 
+First, vendor the offline front-end assets (KaTeX and Mermaid). This is a
+one-time step (repeat only after a bump in `scripts/assets-manifest.toml`); it
+fetches pinned, checksummed files into a gitignored tree. Only this build step
+touches the network -- the built tool stays fully offline.
+
 ```sh
+# fetch KaTeX + Mermaid into crates/mdp-core/assets/vendor/ (gitignored)
+./scripts/vendor-assets.sh
+
 # build the whole workspace
 cargo build
 
@@ -62,6 +72,9 @@ cargo run -p mdp-cli -- README.md
 cargo run -p mdp-cli -- --scheme dark README.md
 cargo run -p mdp-cli -- --theme my-theme.css README.md
 ```
+
+Without the vendor step the tool still builds and runs; math and diagrams
+simply fall back to their source text until the assets are present.
 
 ## Test and coverage
 
@@ -95,6 +108,20 @@ reference only semantic tokens (`--accent`, `--text-body`, `--text-heading`,
 theme: a neutral, elegant default using a permissive system font stack. A
 `--theme <path.css>` file layers over that default, so overriding a few tokens
 is a complete rebrand with no structural change. No company branding is bundled.
+
+Persistent defaults live in an optional `config.toml` in the platform config
+directory (`~/.config/mdp/config.toml` on Linux and macOS, `%APPDATA%\mdp\` on
+Windows; override the location with `MDP_CONFIG_DIR`):
+
+```toml
+# paths are used as-is (no shell ~ expansion); prefer an absolute path
+theme = "/home/you/.config/mdp/themes/mine.css"
+scheme = "dark"
+```
+
+Resolution precedence is: CLI flag, then `config.toml`, then the built-in
+default. See [`docs/power-user-guide.md`](docs/power-user-guide.md) for authoring
+a theme and the full CLI reference.
 
 ## Offline and licensing
 

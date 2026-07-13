@@ -2,6 +2,13 @@
 /target
 **/*.rs.bk
 
+# Vendored third-party front-end assets (KaTeX, Mermaid). Fetched at build time
+# by scripts/vendor-assets.sh into a gitignored tree; rust-embed still reads
+# them from disk. We commit ONLY the vendor script, scripts/assets-manifest.toml
+# (pinned versions + sha256), and THIRD-PARTY-LICENSES.md - never the js/css/
+# woff2 bytes themselves.
+/crates/mdp-core/assets/vendor/
+
 # Coverage artifacts
 *.profraw
 lcov.info

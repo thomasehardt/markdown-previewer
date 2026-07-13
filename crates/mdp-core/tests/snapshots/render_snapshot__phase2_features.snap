@@ -1,0 +1,33 @@
+---
+source: crates/mdp-core/tests/render_snapshot.rs
+assertion_line: 88
+expression: doc.html
+---
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 2</title>
+<style data-mdp="theme">/* THEME_CSS redacted */</style>
+<style data-mdp="shell">/* SHELL_CSS redacted */</style>
+<style data-mdp="syntect">/* SYNTECT_CSS redacted */</style>
+<style data-mdp="katex">/* KATEX_CSS redacted */</style>
+<script data-mdp="katex-lib">/* KATEX_JS redacted */</script>
+</head>
+<body>
+<main class="mdp-document">
+<p>Inline <span data-math-style="inline">a^2 + b^2 = c^2</span> and a display block:</p>
+<p><span data-math-style="display">\sum_{i=1}^{n} i = \frac{n(n+1)}{2}</span></p>
+<pre><code class="language-rust"><span class="mdp-hl-source mdp-hl-rust"><span class="mdp-hl-meta mdp-hl-function mdp-hl-rust"><span class="mdp-hl-meta mdp-hl-function mdp-hl-rust"><span class="mdp-hl-storage mdp-hl-type mdp-hl-function mdp-hl-rust">fn</span> </span><span class="mdp-hl-entity mdp-hl-name mdp-hl-function mdp-hl-rust">add</span></span><span class="mdp-hl-meta mdp-hl-function mdp-hl-rust"><span class="mdp-hl-meta mdp-hl-function mdp-hl-parameters mdp-hl-rust"><span class="mdp-hl-punctuation mdp-hl-section mdp-hl-parameters mdp-hl-begin mdp-hl-rust">(</span><span class="mdp-hl-variable mdp-hl-parameter mdp-hl-rust">a</span><span class="mdp-hl-punctuation mdp-hl-separator mdp-hl-rust">:</span> <span class="mdp-hl-storage mdp-hl-type mdp-hl-rust">i32</span>, <span class="mdp-hl-variable mdp-hl-parameter mdp-hl-rust">b</span><span class="mdp-hl-punctuation mdp-hl-separator mdp-hl-rust">:</span> <span class="mdp-hl-storage mdp-hl-type mdp-hl-rust">i32</span></span><span class="mdp-hl-meta mdp-hl-function mdp-hl-rust"><span class="mdp-hl-meta mdp-hl-function mdp-hl-parameters mdp-hl-rust"><span class="mdp-hl-punctuation mdp-hl-section mdp-hl-parameters mdp-hl-end mdp-hl-rust">)</span></span></span></span><span class="mdp-hl-meta mdp-hl-function mdp-hl-rust"> <span class="mdp-hl-meta mdp-hl-function mdp-hl-return-type mdp-hl-rust"><span class="mdp-hl-punctuation mdp-hl-separator mdp-hl-rust">-&gt;</span> <span class="mdp-hl-storage mdp-hl-type mdp-hl-rust">i32</span></span> </span><span class="mdp-hl-meta mdp-hl-function mdp-hl-rust"><span class="mdp-hl-meta mdp-hl-block mdp-hl-rust"><span class="mdp-hl-punctuation mdp-hl-section mdp-hl-block mdp-hl-begin mdp-hl-rust">{</span>
+a <span class="mdp-hl-keyword mdp-hl-operator mdp-hl-rust">+</span> b
+</span><span class="mdp-hl-meta mdp-hl-block mdp-hl-rust"><span class="mdp-hl-punctuation mdp-hl-section mdp-hl-block mdp-hl-end mdp-hl-rust">}</span></span></span>
+</span></code></pre>
+<pre><code class="language-mermaid">flowchart LR; X --&gt; Y;
+</code></pre>
+</main>
+<script data-mdp="mermaid-lib">/* MERMAID_JS redacted */</script>
+<script data-mdp="mermaid-init">mermaid.initialize({startOnLoad:false,securityLevel:"strict"});</script>
+<script data-mdp="shell">/* SHELL_JS redacted */</script>
+</body>
+</html>

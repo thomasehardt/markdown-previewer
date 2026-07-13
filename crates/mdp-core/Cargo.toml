@@ -11,6 +11,11 @@ repository.workspace = true
 comrak = { workspace = true }
 ammonia = { workspace = true }
 rust-embed = { workspace = true }
+# Pure-Rust syntax highlighting (design section 3). default-features off drops
+# the Oniguruma C engine; default-fancy selects the fancy-regex engine plus the
+# default syntax and theme sets. Highlighting runs once in core so preview and
+# export are byte-identical.
+syntect = { version = "5.3.0", default-features = false, features = ["default-fancy"] }
 
 [dev-dependencies]
 # Review-friendly HTML snapshots; filters redact the large inlined asset blobs

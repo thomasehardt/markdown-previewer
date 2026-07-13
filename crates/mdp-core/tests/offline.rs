@@ -43,6 +43,19 @@ An autolink <https://example.com> and a [named link](http://example.org).
 ![alt](https://cdn.example.com/pic.png)
 "#;
 
+/// A document exercising both Phase 2 asset paths at once: math (KaTeX) and a
+/// diagram (Mermaid). It carries no external URLs of its own.
+const MATH_AND_MERMAID: &str = r#"# Math and Mermaid
+
+Inline $\alpha + \beta = \gamma$ and a display block:
+
+$$\frac{a}{b} = c$$
+
+```mermaid
+graph TD; A-->B;
+```
+"#;
+
 /// The assembled shell: everything except the rendered Markdown body.
 fn shell_only(html: &str) -> String {
     let start = html.find("<main").expect("no <main> in output");
@@ -78,4 +91,67 @@ fn shell_is_offline_even_when_content_has_links() {
     let doc = render_document(WITH_URLS, &RenderOptions::default());
     // User link text may legitimately appear in the body; the shell must not.
     assert_offline(&shell_only(&doc.html), "the assembled shell");
+}
+
+/// Remove the body of a marked asset block, keeping the surrounding tags. Used
+/// to set aside the large vendored library blobs (KaTeX CSS/JS, Mermaid JS)
+/// before scanning the rest of the page.
+fn strip_block_body(html: &str, start: &str, end: &str) -> String {
+    match html.find(start) {
+        Some(i) => {
+            let after = i + start.len();
+            let rel_end = html[after..]
+                .find(end)
+                .expect("marked asset block was not terminated");
+            format!("{}{}", &html[..after], &html[after + rel_end..])
+        }
+        None => html.to_string(),
+    }
+}
+
+/// Fonts-render-not-boxes (design section 4.1/5): a document with math must
+/// carry `@font-face` rules whose sources are base64 `data:` woff2 URIs, so the
+/// glyphs are embedded and math renders as glyphs rather than tofu boxes. No
+/// font may be pulled from an external URL. Skips if KaTeX is not vendored yet.
+#[test]
+fn math_fonts_are_embedded_as_base64_not_external() {
+    let doc = render_document("Euler's identity: $e^{i\\pi} + 1 = 0$\n", &RenderOptions::default());
+    let html = doc.html;
+    if !html.contains(r#"data-mdp="katex""#) {
+        eprintln!("skipping: KaTeX assets not vendored (run scripts/vendor-assets.sh)");
+        return;
+    }
+    assert!(
+        html.contains("@font-face"),
+        "no @font-face rules; math would render as boxes"
+    );
+    assert!(
+        html.contains("data:font/woff2;base64,"),
+        "fonts are not embedded as base64 data: URIs"
+    );
+    assert!(
+        !html.contains("src:url(http") && !html.contains("src: url(http"),
+        "a font is loaded from an external URL"
+    );
+}
+
+/// The offline-URL scan must stay green on a document containing BOTH math and
+/// a mermaid diagram (design section 5). The vendored KaTeX/Mermaid libraries
+/// legitimately embed XML-namespace identifiers (e.g. the SVG namespace URI)
+/// and base64 font blobs; their offline-ness is enforced by the vendor pipeline
+/// and the KaTeX self-containment/font tests. We set those trusted blobs aside,
+/// then prove our own assembly, the generated highlight CSS, the mermaid init,
+/// and the shell add zero external references.
+#[test]
+fn math_and_mermaid_page_makes_no_network_reference() {
+    let doc = render_document(MATH_AND_MERMAID, &RenderOptions::default());
+    let mut html = doc.html;
+    if !html.contains(r#"data-mdp="katex""#) || !html.contains(r#"data-mdp="mermaid-lib""#) {
+        eprintln!("skipping: KaTeX/Mermaid assets not vendored (run scripts/vendor-assets.sh)");
+        return;
+    }
+    html = strip_block_body(&html, r#"<style data-mdp="katex">"#, "</style>");
+    html = strip_block_body(&html, r#"<script data-mdp="katex-lib">"#, "</script>");
+    html = strip_block_body(&html, r#"<script data-mdp="mermaid-lib">"#, "</script>");
+    assert_offline(&html, "the math+mermaid page (vendored libraries aside)");
 }
