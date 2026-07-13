@@ -88,6 +88,12 @@ enum Frontend {
     Serve,
 }
 
+/// The resolved action after parsing, carrying any per-frontend options.
+enum Action {
+    Webview,
+    Serve { port: u16, open: bool },
+}
+
 impl From<Scheme> for ColorScheme {
     fn from(s: Scheme) -> Self {
         match s {
@@ -106,12 +112,33 @@ fn main() -> ExitCode {
     let theme = config::resolve_theme(cli.theme.clone(), config.theme.clone());
     let scheme: ColorScheme = config::resolve_scheme(cli.scheme, config.scheme).into();
 
-    // Resolve the target file and the frontend from whichever surface was used.
-    // Phase 1 previews a single file; the surface accepts several so multi-file
+    // Resolve the target file and the action from whichever surface was used.
+    // Phase 1/2 preview a single file; the surface accepts several so multi-file
     // support is additive later.
-    let (file, frontend) = match &cli.command {
-        Some(Command::View { files, frontend }) => (files.first().cloned(), *frontend),
-        Some(Command::Serve { files, .. }) => (files.first().cloned(), Frontend::Serve),
+    let (file, action) = match &cli.command {
+        Some(Command::View { files, frontend }) => {
+            let action = match frontend {
+                Frontend::Webview => Action::Webview,
+                // `view --frontend serve` uses an ephemeral port and opens the
+                // browser (the `serve` subcommand is where you tune those).
+                Frontend::Serve => Action::Serve {
+                    port: 0,
+                    open: true,
+                },
+            };
+            (files.first().cloned(), action)
+        }
+        Some(Command::Serve {
+            files,
+            port,
+            no_open,
+        }) => (
+            files.first().cloned(),
+            Action::Serve {
+                port: *port,
+                open: !*no_open,
+            },
+        ),
         Some(Command::Export { file, to }) => {
             eprintln!(
                 "mdp: export to {} is not implemented yet (design Phase 6).",
@@ -120,7 +147,7 @@ fn main() -> ExitCode {
             let _ = file;
             return ExitCode::from(2);
         }
-        None => (cli.files.first().cloned(), Frontend::Webview),
+        None => (cli.files.first().cloned(), Action::Webview),
     };
 
     let Some(file) = file else {
@@ -133,12 +160,9 @@ fn main() -> ExitCode {
         Err(code) => return code,
     };
 
-    match frontend {
-        Frontend::Webview => open_webview(&doc),
-        Frontend::Serve => {
-            eprintln!("mdp: the serve frontend is not implemented yet (design Phase 3).");
-            ExitCode::from(2)
-        }
+    match action {
+        Action::Webview => open_webview(&doc),
+        Action::Serve { port, open } => open_serve(&doc, port, open),
     }
 }
 
@@ -173,11 +197,51 @@ fn render_file(
 }
 
 /// Dispatch to the native webview frontend when the feature is compiled in.
+///
+/// `show` runs the event loop and only returns on an error (the process
+/// otherwise exits from within the loop when the window closes). If the webview
+/// cannot initialize (design risk #5: e.g. a missing Linux webkit runtime), we
+/// automatically fall back to the local-server frontend when it is available.
 #[cfg(feature = "webview")]
 fn open_webview(doc: &mdp_core::RenderedDoc) -> ExitCode {
-    // `show` runs the event loop and only returns on an error (the process
-    // otherwise exits from within the loop when the window closes).
     match mdp_webview::show(doc) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("mdp: {e}");
+            #[cfg(feature = "serve")]
+            {
+                eprintln!("mdp: falling back to the local-server frontend.");
+                open_serve(doc, 0, true)
+            }
+            #[cfg(not(feature = "serve"))]
+            {
+                ExitCode::FAILURE
+            }
+        }
+    }
+}
+
+/// When built without the `webview` feature, prefer the server frontend if it is
+/// present; otherwise there is no way to display.
+#[cfg(not(feature = "webview"))]
+fn open_webview(doc: &mdp_core::RenderedDoc) -> ExitCode {
+    #[cfg(feature = "serve")]
+    {
+        eprintln!("mdp: built without the `webview` feature; using the local server.");
+        open_serve(doc, 0, true)
+    }
+    #[cfg(not(feature = "serve"))]
+    {
+        let _ = doc;
+        eprintln!("mdp: built without a display frontend (webview or serve).");
+        ExitCode::from(2)
+    }
+}
+
+/// Dispatch to the local-server frontend when the feature is compiled in.
+#[cfg(feature = "serve")]
+fn open_serve(doc: &mdp_core::RenderedDoc, port: u16, open_browser: bool) -> ExitCode {
+    match mdp_serve::serve(doc, port, open_browser) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("mdp: {e}");
@@ -186,10 +250,11 @@ fn open_webview(doc: &mdp_core::RenderedDoc) -> ExitCode {
     }
 }
 
-/// Fallback when the binary is built without the `webview` feature.
-#[cfg(not(feature = "webview"))]
-fn open_webview(_doc: &mdp_core::RenderedDoc) -> ExitCode {
-    eprintln!("mdp: built without the `webview` feature; no native frontend available.");
+/// Fallback when the binary is built without the `serve` feature.
+#[cfg(not(feature = "serve"))]
+fn open_serve(doc: &mdp_core::RenderedDoc, _port: u16, _open_browser: bool) -> ExitCode {
+    let _ = doc;
+    eprintln!("mdp: built without the `serve` feature.");
     ExitCode::from(2)
 }
 

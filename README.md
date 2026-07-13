@@ -11,7 +11,7 @@ to build and run it.
 
 ## Status
 
-Phases 1 and 2 of the [phased plan](docs/design.md) are implemented. The
+Phases 1 through 3 of the [phased plan](docs/design.md) are implemented. The
 display-agnostic core renders CommonMark plus GFM (tables, task lists,
 strikethrough, autolinks, tag filtering, footnotes, and alerts) into a fully
 self-contained HTML page, sanitized and styled by a neutral, token-based theme.
@@ -20,11 +20,13 @@ math is typeset with KaTeX, and `mermaid` fenced blocks render as diagrams --
 all offline, with the KaTeX and Mermaid assets injected only when a document
 actually uses them. A `--theme` file and an optional `config.toml` customize the
 look. The default `mdp <FILE>` path opens the page read-only in a native window
-(wry + tao) behind an instant spinner shell.
+(wry + tao) behind an instant spinner shell. The local-server frontend
+(`mdp serve`) serves the same page on a loopback port for headless or
+browser-based use, printing the URL to stdout; the webview automatically falls
+back to it if it cannot initialize.
 
-Not yet implemented (later phases): a read-only "view source" toggle, the
-local-server frontend (`serve`), file watching with reload prompts, and
-HTML/PDF export (`export`).
+Not yet implemented (later phases): a read-only "view source" toggle, file
+watching with reload prompts, and HTML/PDF export (`export`).
 
 ## Architecture
 

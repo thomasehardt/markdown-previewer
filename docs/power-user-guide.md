@@ -10,7 +10,7 @@ how the offline asset vendoring works. For everyday use see the
 ```
 mdp [OPTIONS] [FILE]...                 preview (default path: native webview)
 mdp view  [FILE]... [--frontend ...]    explicit preview
-mdp serve [FILE]... [--port N] [--no-open]   local server (later phase)
+mdp serve [FILE]... [--port N] [--no-open]   local server (loopback + browser)
 mdp export <FILE> --to <OUT>            export to HTML/PDF (later phase)
 ```
 
@@ -23,10 +23,30 @@ Global options (apply to every path):
 | `--no-watch` | Disable file watching (wired for a later phase). |
 | `--view-source-default` | Open showing raw source (wired for a later phase). |
 
-Status today: the default path and `view --frontend webview` open the native
-window. `view --frontend serve`, `serve`, and `export` are parsed and validated
-but report that their frontend lands in a later phase (they exit non-zero rather
-than pretend). `--help` and `--version` work.
+Status today: the default path and `view` open the native webview; `serve` (and
+`view --frontend serve`) run the local server; and the webview automatically
+falls back to the server if it cannot initialize (for example, a missing Linux
+webkit runtime). `export` is parsed and validated but reports that its frontend
+lands in Phase 6 (it exits non-zero rather than pretend). `--help` and
+`--version` work.
+
+## Headless use (calling from another tool)
+
+`mdp serve` is the display-agnostic path: it needs no OS webview and does not
+block on a window. It binds `127.0.0.1` on an ephemeral port (`--port 0`, the
+default), prints the URL to **stdout** (status goes to stderr), and serves the
+rendered page until interrupted.
+
+```sh
+# start a server, print the URL, do not open a browser
+mdp serve --no-open --port 0 GENERATED.md
+#   -> http://127.0.0.1:53017/
+```
+
+A calling tool captures stdout to get the URL, then opens or embeds it. Routes:
+`/` serves the self-contained document; `/.mdp/reload` returns
+`{"changed":false}` today and becomes the file-watch reload signal in Phase 5;
+anything else is a 404.
 
 ## Authoring a theme
 

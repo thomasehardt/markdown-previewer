@@ -23,8 +23,8 @@ requirement to the implementation plan in `docs/design.md` section 9.
 | FR9 | Export to PDF (offline, diagrams and math preserved). | 7 | Planned (macOS silent-PDF path proven by spike) |
 | FR10 | Watch tracked file(s); on change, show a non-intrusive reload prompt. Never auto-swap the reader's view. | 5 | Planned |
 | FR11 | Instant launch feedback: a window/tab with a loading state appears immediately, then content swaps in. | 1 | Done (spinner shell) |
-| FR12 | Callable by other tools (including Claude Code) to display Markdown headlessly (serve on an ephemeral port; print the URL). | 3 | Planned |
-| FR13 | Multiple display frontends over one shared core: native webview (default), local server + browser, headless export. | 1/3/6 | webview Done; serve + export Planned |
+| FR12 | Callable by other tools (including Claude Code) to display Markdown headlessly (serve on an ephemeral port; print the URL). | 3 | Done |
+| FR13 | Multiple display frontends over one shared core: native webview (default), local server + browser, headless export. | 1/3/6 | webview + serve Done (with webview->serve fallback); export Planned |
 | FR14 | Customizable branding via a CSS token override file (`--theme <path>`), with a config file able to set a standing default theme. | 2 | Done (`--theme` + `config.toml`, flag > config > default) |
 | FR15 | Color scheme control: auto (follow OS), light, dark. | 1 | Done (plumbed; `--scheme`) |
 | FR16 | Accept multiple input files. | 1 | Partial (accepted; first previewed) |

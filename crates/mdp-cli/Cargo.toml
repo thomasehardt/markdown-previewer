@@ -29,6 +29,8 @@ mdp-serve = { workspace = true, optional = true }
 tempfile = "3"
 
 [features]
-default = ["webview"]
+# The shipped binary carries both frontends: the native webview (default view)
+# and the local server (headless / Claude-Code path / webview fallback).
+default = ["webview", "serve"]
 webview = ["dep:mdp-webview"]
 serve = ["dep:mdp-serve"]

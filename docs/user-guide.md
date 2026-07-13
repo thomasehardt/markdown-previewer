@@ -62,6 +62,17 @@ set it in `config.toml` (see the power-user guide).
 - Diagrams with Mermaid: fenced ` ```mermaid ` blocks render as diagrams.
 - Syntax-highlighted code blocks.
 
+## Opening in a browser instead
+
+Prefer your browser, or on a machine without a desktop window? Use `serve`:
+
+```sh
+mdp serve notes.md            # start a local server and open your browser
+mdp serve --no-open notes.md  # just print the URL for you to open
+```
+
+It serves only on your own machine (`127.0.0.1`) and stops with Ctrl-C.
+
 ## Troubleshooting
 
 - **Math or diagrams show as plain text.** The offline assets are not vendored

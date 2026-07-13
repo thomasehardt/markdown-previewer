@@ -8,6 +8,9 @@ rust-version.workspace = true
 repository.workspace = true
 
 [dependencies]
-# Compiling stub for Phase 1 (design section 9). tiny_http + webbrowser
-# (design section 3) arrive in Phase 3.
 mdp-core = { workspace = true }
+# Synchronous, tokio-free single-page server + a reload endpoint (design
+# section 3): keeps launch fast and the binary lean. `webbrowser` opens a real
+# browser (not a registered editor) without blocking.
+tiny_http = "0.12"
+webbrowser = "1"
