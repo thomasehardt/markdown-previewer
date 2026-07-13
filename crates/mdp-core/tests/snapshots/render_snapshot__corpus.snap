@@ -1,0 +1,90 @@
+---
+source: crates/mdp-core/tests/render_snapshot.rs
+expression: doc.html
+---
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corpus</title>
+<style data-mdp="theme">/* THEME_CSS redacted */</style>
+<style data-mdp="shell">/* SHELL_CSS redacted */</style>
+</head>
+<body>
+<main class="mdp-document">
+<h1>Document Title</h1>
+<p>A paragraph with <strong>strong</strong>, <em>emphasis</em>, <del>strikethrough</del>, <code>inline code</code>, and
+a <a href="#document-title" rel="noopener noreferrer">link to a heading</a>. An autolink: <a href="https://example.com" rel="noopener noreferrer">https://example.com</a>.</p>
+<h2>Lists</h2>
+<p>Unordered:</p>
+<ul>
+<li>First</li>
+<li>Second
+<ul>
+<li>Nested</li>
+</ul>
+</li>
+<li>Third</li>
+</ul>
+<p>Ordered:</p>
+<ol>
+<li>One</li>
+<li>Two</li>
+<li>Three</li>
+</ol>
+<p>Task list:</p>
+<ul>
+<li><input type="checkbox" disabled=""> Not done</li>
+<li><input type="checkbox" checked="" disabled=""> Done</li>
+</ul>
+<h2>Blockquote</h2>
+<blockquote>
+<p>A quote spanning
+two lines.</p>
+</blockquote>
+<h2>Table</h2>
+<table>
+<thead>
+<tr>
+<th align="left">Fruit</th>
+<th align="center">Count</th>
+<th align="right">Price</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">Apples</td>
+<td align="center">3</td>
+<td align="right">1.50</td>
+</tr>
+<tr>
+<td align="left">Pears</td>
+<td align="center">12</td>
+<td align="right">4.00</td>
+</tr>
+</tbody>
+</table>
+<h2>Fenced code</h2>
+<pre><code class="language-rust">fn main() {
+    println!("hello");
+}
+</code></pre>
+<h2>Alert</h2>
+<div class="markdown-alert markdown-alert-warning">
+<p class="markdown-alert-title">Warning</p>
+<p>Be careful here.</p>
+</div>
+<h2>Footnote</h2>
+<p>This claim needs a source.<sup class="footnote-ref"><a href="#fn-src" id="fnref-src" rel="noopener noreferrer">1</a></sup></p>
+<section class="footnotes">
+<ol>
+<li id="fn-src">
+<p>The supporting reference. <a href="#fnref-src" class="footnote-backref" rel="noopener noreferrer">↩</a></p>
+</li>
+</ol>
+</section>
+</main>
+<script data-mdp="shell">/* SHELL_JS redacted */</script>
+</body>
+</html>

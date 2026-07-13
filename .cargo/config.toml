@@ -1,0 +1,4 @@
+# Convenience aliases. Coverage gates on mdp-core only (design section 7),
+# so the number is not diluted by thin frontend glue.
+[alias]
+cov = "llvm-cov -p mdp-core --summary-only"

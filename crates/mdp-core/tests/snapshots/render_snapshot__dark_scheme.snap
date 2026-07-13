@@ -1,0 +1,21 @@
+---
+source: crates/mdp-core/tests/render_snapshot.rs
+expression: doc.html
+---
+<!doctype html>
+<html lang="en" data-color-scheme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dark</title>
+<style data-mdp="theme">/* THEME_CSS redacted */</style>
+<style data-mdp="shell">/* SHELL_CSS redacted */</style>
+</head>
+<body>
+<main class="mdp-document">
+<h1>Dark mode</h1>
+<p>Body.</p>
+</main>
+<script data-mdp="shell">/* SHELL_JS redacted */</script>
+</body>
+</html>

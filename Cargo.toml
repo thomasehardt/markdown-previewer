@@ -1,0 +1,45 @@
+# Virtual workspace for markdown-previewer (mdp). See docs/design.md section 2.
+# A display-agnostic core plus three thin frontends. resolver = "3" is the
+# MSRV-aware dependency resolver (design section 2).
+[workspace]
+resolver = "3"
+members = [
+    "crates/mdp-core",
+    "crates/mdp-cli",
+    "crates/mdp-webview",
+    "crates/mdp-serve",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.97.0"
+repository = "https://github.com/example/markdown-previewer"
+
+# Pinned exactly per design section 3. comrak extension field names churn
+# across releases, so the exact version matters.
+[workspace.dependencies]
+# default-features off drops comrak's bundled syntect+Oniguruma (a C dep the
+# design deliberately avoids) and the clap-based CLI. Phase 1 only needs the
+# library render path; syntect highlighting is a Phase 2 concern handled in
+# our own crate with the pure-Rust fancy-regex engine.
+comrak = { version = "0.54.0", default-features = false }
+ammonia = "4.1"
+rust-embed = "8.11.0"
+# Native webview frontend (design section 3). Matched pair from tauri-apps;
+# wry uses the OS engine (WKWebView / WebView2 / WebKitGTK) so nothing is
+# bundled on macOS/Windows. Custom protocol serves offline assets.
+wry = "0.55.1"
+tao = "0.35.3"
+mdp-core = { path = "crates/mdp-core" }
+mdp-webview = { path = "crates/mdp-webview" }
+mdp-serve = { path = "crates/mdp-serve" }
+
+# A release profile that keeps the shipped binary lean (design section 5:
+# bundle size matters). Not load-bearing for Phase 1 but set from the start.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

@@ -1,0 +1,8 @@
+# Pins the Rust toolchain for this project (the idiomatic equivalent of a venv).
+# rustup reads this automatically for any command run inside this directory and
+# switches to the exact version below, installing it and the listed components
+# on first use. Bump the channel deliberately; re-verify crate APIs on upgrade.
+[toolchain]
+channel = "1.97.0"
+components = ["rustfmt", "clippy", "llvm-tools-preview"]
+profile = "minimal"

@@ -1,0 +1,26 @@
+[package]
+name = "mdp-cli"
+description = "The mdp command-line binary: clap parsing, dispatch to a frontend behind cargo features."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+# The single shipped binary is named `mdp` (design section 2).
+[[bin]]
+name = "mdp"
+path = "src/main.rs"
+
+[dependencies]
+mdp-core = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+# Frontends are optional and selected by feature (design section 2). They are
+# minimal compiling placeholders for Phase 1 and get fleshed out later.
+mdp-webview = { workspace = true, optional = true }
+mdp-serve = { workspace = true, optional = true }
+
+[features]
+default = ["webview"]
+webview = ["dep:mdp-webview"]
+serve = ["dep:mdp-serve"]

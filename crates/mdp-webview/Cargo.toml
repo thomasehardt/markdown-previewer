@@ -1,0 +1,17 @@
+[package]
+name = "mdp-webview"
+description = "Native webview frontend (wry + tao). Enabled by the mdp-cli `webview` feature."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Consumes the core's self-contained HTML product and displays it in a native
+# OS webview. wry + tao are a matched pair (design section 3); wry re-exports
+# `http`, so the custom-protocol Request/Response types come from `wry::http`
+# with no separate http dependency.
+mdp-core = { workspace = true }
+wry = { workspace = true }
+tao = { workspace = true }

@@ -1,0 +1,189 @@
+/*
+ * mdp app shell: layout and prose styling.
+ *
+ * STRICT: this file references SEMANTIC TOKENS only (design section 4.6). It
+ * must never contain a raw color, font name, or brand identity. Every visual
+ * value comes from a --token defined by the theme, so swapping the theme is a
+ * complete restyle with no change here.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-page);
+  color: var(--text-body);
+  font-family: var(--font-body);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.mdp-document {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4) var(--space-5);
+  background: var(--surface-card);
+  min-height: 100vh;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+/* Headings */
+.mdp-document h1,
+.mdp-document h2,
+.mdp-document h3,
+.mdp-document h4,
+.mdp-document h5,
+.mdp-document h6 {
+  font-family: var(--font-heading);
+  color: var(--text-heading);
+  line-height: 1.25;
+  margin: var(--space-5) 0 var(--space-3);
+  font-weight: 650;
+}
+
+.mdp-document h1 {
+  font-size: 2rem;
+  margin-top: 0;
+}
+.mdp-document h2 {
+  font-size: 1.5rem;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+.mdp-document h3 {
+  font-size: 1.25rem;
+}
+.mdp-document h4 {
+  font-size: 1.05rem;
+}
+
+.mdp-document p {
+  margin: var(--space-3) 0;
+}
+
+/* Links */
+.mdp-document a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.mdp-document a:hover {
+  text-decoration: underline;
+}
+
+/* Inline and block code */
+.mdp-document code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--code-bg);
+  color: var(--code-text);
+  padding: 0.15em 0.35em;
+  border-radius: var(--radius-sm);
+}
+
+.mdp-document pre {
+  background: var(--code-bg);
+  color: var(--code-text);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  border: 1px solid var(--border);
+}
+
+.mdp-document pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* Blockquote */
+.mdp-document blockquote {
+  margin: var(--space-3) 0;
+  padding: var(--space-1) var(--space-4);
+  border-left: 3px solid var(--accent);
+  color: var(--text-muted);
+}
+
+/* Lists */
+.mdp-document ul,
+.mdp-document ol {
+  padding-left: var(--space-4);
+}
+.mdp-document li {
+  margin: var(--space-1) 0;
+}
+
+/* Task lists */
+.mdp-document li input[type="checkbox"] {
+  margin-right: var(--space-2);
+  accent-color: var(--accent);
+}
+
+/* Tables */
+.mdp-document table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: var(--space-3) 0;
+  display: block;
+  overflow-x: auto;
+}
+.mdp-document th,
+.mdp-document td {
+  border: 1px solid var(--border);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+}
+.mdp-document th {
+  background: var(--surface-sunken);
+  font-weight: 650;
+}
+
+/* Horizontal rule */
+.mdp-document hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: var(--space-5) 0;
+}
+
+/* Images */
+.mdp-document img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+}
+
+/* GFM alerts / admonitions (comrak `alerts` extension). Kept token-driven; a
+ * refined per-type palette can arrive with the Phase 2 theme work. */
+.mdp-document .markdown-alert {
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-4);
+  border-left: 3px solid var(--accent);
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm);
+}
+.mdp-document .markdown-alert-title {
+  font-weight: 650;
+  color: var(--text-heading);
+  margin: var(--space-1) 0;
+  text-transform: capitalize;
+}
+
+/* Footnotes */
+.mdp-document .footnotes {
+  margin-top: var(--space-5);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.mdp-document sup.footnote-ref {
+  font-size: 0.75em;
+}

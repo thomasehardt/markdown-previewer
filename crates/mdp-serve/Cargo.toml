@@ -1,0 +1,13 @@
+[package]
+name = "mdp-serve"
+description = "Local HTTP server frontend (tiny_http + system browser). Enabled by the mdp-cli `serve` feature."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Compiling stub for Phase 1 (design section 9). tiny_http + webbrowser
+# (design section 3) arrive in Phase 3.
+mdp-core = { workspace = true }

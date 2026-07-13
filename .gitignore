@@ -1,0 +1,19 @@
+# Rust build output
+/target
+**/*.rs.bk
+
+# Coverage artifacts
+*.profraw
+lcov.info
+
+# Pending insta snapshots (review, then rename to .snap)
+*.snap.new
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Note: Cargo.lock IS committed - mdp ships a binary, so we pin the exact
+# dependency graph for reproducible builds. Do not ignore it.

@@ -1,0 +1,18 @@
+[package]
+name = "mdp-core"
+description = "Markdown to self-contained HTML: parse, sanitize, asset inlining. The coverage target."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+comrak = { workspace = true }
+ammonia = { workspace = true }
+rust-embed = { workspace = true }
+
+[dev-dependencies]
+# Review-friendly HTML snapshots; filters redact the large inlined asset blobs
+# (design section 7). cargo-insta 1.48 is installed in this environment.
+insta = { version = "1.48", features = ["filters"] }

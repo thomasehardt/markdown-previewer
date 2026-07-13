@@ -1,0 +1,290 @@
+//! The `mdp` binary.
+//!
+//! It parses the "subcommand-or-default-path" surface (design section 6) and
+//! dispatches to a frontend. In Phase 1 the default (subcommand-free) path and
+//! the `view` subcommand open the native webview preview (feature `webview`);
+//! `serve` and `export` are wired into the clap surface but their frontends
+//! land in later phases, so they report that plainly instead of pretending.
+
+use std::path::PathBuf;
+use std::process::ExitCode;
+
+use clap::{Parser, Subcommand, ValueEnum};
+use mdp_core::{ColorScheme, RenderOptions};
+
+#[derive(Parser)]
+#[command(name = "mdp", version, about = "An elegant, fast Markdown previewer.")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+
+    /// Markdown file(s) to preview (the default, subcommand-free path).
+    #[arg(value_name = "FILE", global = true)]
+    files: Vec<PathBuf>,
+
+    /// Theme CSS file layered over the built-in neutral default.
+    #[arg(long, value_name = "PATH", global = true)]
+    theme: Option<PathBuf>,
+
+    /// Color scheme (default: auto, following the OS preference).
+    #[arg(long, value_enum, default_value_t = Scheme::Auto, global = true)]
+    scheme: Scheme,
+
+    /// Disable file watching (no reload prompts). Wired for later phases.
+    #[arg(long, global = true)]
+    no_watch: bool,
+
+    /// Open showing the raw source instead of the rendered view. Wired for
+    /// later phases.
+    #[arg(long, global = true)]
+    view_source_default: bool,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Open a preview (native webview or local server).
+    View {
+        #[arg(value_name = "FILE")]
+        files: Vec<PathBuf>,
+        /// Which frontend to use.
+        #[arg(long, value_enum, default_value_t = Frontend::Webview)]
+        frontend: Frontend,
+    },
+    /// Serve the preview over a local HTTP server (later phase).
+    Serve {
+        #[arg(value_name = "FILE")]
+        files: Vec<PathBuf>,
+        /// Port to bind (0 picks an ephemeral port).
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Do not auto-open a browser; just print the URL.
+        #[arg(long)]
+        no_open: bool,
+    },
+    /// Export a self-contained HTML (or, later, PDF) file (later phase).
+    Export {
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+        /// Output path (`.html` today; `.pdf` in a later phase).
+        #[arg(long = "to", value_name = "OUT")]
+        to: PathBuf,
+    },
+}
+
+#[derive(Copy, Clone, ValueEnum)]
+enum Scheme {
+    Auto,
+    Light,
+    Dark,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum Frontend {
+    Webview,
+    Serve,
+}
+
+impl From<Scheme> for ColorScheme {
+    fn from(s: Scheme) -> Self {
+        match s {
+            Scheme::Auto => ColorScheme::Auto,
+            Scheme::Light => ColorScheme::Light,
+            Scheme::Dark => ColorScheme::Dark,
+        }
+    }
+}
+
+fn main() -> ExitCode {
+    let cli = Cli::parse();
+
+    // Resolve the target file and the frontend from whichever surface was used.
+    // Phase 1 previews a single file; the surface accepts several so multi-file
+    // support is additive later.
+    let (file, frontend) = match &cli.command {
+        Some(Command::View { files, frontend }) => (files.first().cloned(), *frontend),
+        Some(Command::Serve { files, .. }) => (files.first().cloned(), Frontend::Serve),
+        Some(Command::Export { file, to }) => {
+            eprintln!(
+                "mdp: export to {} is not implemented yet (design Phase 6).",
+                to.display()
+            );
+            let _ = file;
+            return ExitCode::from(2);
+        }
+        None => (cli.files.first().cloned(), Frontend::Webview),
+    };
+
+    let Some(file) = file else {
+        eprintln!("mdp: no input file given. Try `mdp <FILE>` or `mdp --help`.");
+        return ExitCode::from(2);
+    };
+
+    let doc = match render_file(&file, &cli) {
+        Ok(doc) => doc,
+        Err(code) => return code,
+    };
+
+    match frontend {
+        Frontend::Webview => open_webview(&doc),
+        Frontend::Serve => {
+            eprintln!("mdp: the serve frontend is not implemented yet (design Phase 3).");
+            ExitCode::from(2)
+        }
+    }
+}
+
+/// Read a Markdown file and render it to the self-contained document, applying
+/// the CLI's theme and color-scheme options. Returns the CLI exit code to use
+/// on any I/O failure.
+fn render_file(file: &PathBuf, cli: &Cli) -> Result<mdp_core::RenderedDoc, ExitCode> {
+    let markdown = std::fs::read_to_string(file).map_err(|e| {
+        eprintln!("mdp: cannot read {}: {e}", file.display());
+        ExitCode::FAILURE
+    })?;
+
+    let extra_theme_css = match &cli.theme {
+        Some(theme_path) => Some(std::fs::read_to_string(theme_path).map_err(|e| {
+            eprintln!("mdp: cannot read theme {}: {e}", theme_path.display());
+            ExitCode::FAILURE
+        })?),
+        None => None,
+    };
+
+    let opts = RenderOptions {
+        title: file.file_name().map(|n| n.to_string_lossy().into_owned()),
+        color_scheme: cli.scheme.into(),
+        extra_theme_css,
+    };
+
+    Ok(mdp_core::render_document(&markdown, &opts))
+}
+
+/// Dispatch to the native webview frontend when the feature is compiled in.
+#[cfg(feature = "webview")]
+fn open_webview(doc: &mdp_core::RenderedDoc) -> ExitCode {
+    // `show` runs the event loop and only returns on an error (the process
+    // otherwise exits from within the loop when the window closes).
+    match mdp_webview::show(doc) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("mdp: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Fallback when the binary is built without the `webview` feature.
+#[cfg(not(feature = "webview"))]
+fn open_webview(_doc: &mdp_core::RenderedDoc) -> ExitCode {
+    eprintln!("mdp: built without the `webview` feature; no native frontend available.");
+    ExitCode::from(2)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    /// clap's own consistency check: catches conflicting flags, bad defaults,
+    /// duplicate names, etc. at test time rather than at first run.
+    #[test]
+    fn cli_definition_is_internally_consistent() {
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn help_renders() {
+        // Rendering long help exercises the whole command tree without a TTY.
+        let help = Cli::command().render_long_help().to_string();
+        assert!(help.contains("view"));
+        assert!(help.contains("serve"));
+        assert!(help.contains("export"));
+        assert!(help.contains("--theme"));
+        assert!(help.contains("--scheme"));
+    }
+
+    #[test]
+    fn bare_file_is_the_default_path() {
+        let cli = Cli::try_parse_from(["mdp", "README.md"]).unwrap();
+        assert!(cli.command.is_none());
+        assert_eq!(cli.files, vec![PathBuf::from("README.md")]);
+        // Default color scheme is auto.
+        assert!(matches!(ColorScheme::from(cli.scheme), ColorScheme::Auto));
+    }
+
+    #[test]
+    fn multiple_files_accepted_on_default_path() {
+        let cli = Cli::try_parse_from(["mdp", "a.md", "b.md"]).unwrap();
+        assert_eq!(cli.files.len(), 2);
+    }
+
+    #[test]
+    fn global_flags_parse() {
+        let cli =
+            Cli::try_parse_from(["mdp", "--scheme", "dark", "--theme", "t.css", "x.md"]).unwrap();
+        assert!(matches!(ColorScheme::from(cli.scheme), ColorScheme::Dark));
+        assert_eq!(cli.theme, Some(PathBuf::from("t.css")));
+        let cli = Cli::try_parse_from(["mdp", "--no-watch", "--view-source-default", "x.md"])
+            .unwrap();
+        assert!(cli.no_watch);
+        assert!(cli.view_source_default);
+    }
+
+    #[test]
+    fn view_subcommand_defaults_to_webview_frontend() {
+        let cli = Cli::try_parse_from(["mdp", "view", "x.md"]).unwrap();
+        match cli.command {
+            Some(Command::View { files, frontend }) => {
+                assert_eq!(files, vec![PathBuf::from("x.md")]);
+                assert_eq!(frontend, Frontend::Webview);
+            }
+            _ => panic!("expected view subcommand"),
+        }
+    }
+
+    #[test]
+    fn view_frontend_serve_is_selectable() {
+        let cli = Cli::try_parse_from(["mdp", "view", "--frontend", "serve", "x.md"]).unwrap();
+        match cli.command {
+            Some(Command::View { frontend, .. }) => assert_eq!(frontend, Frontend::Serve),
+            _ => panic!("expected view subcommand"),
+        }
+    }
+
+    #[test]
+    fn serve_subcommand_parses_port_and_no_open() {
+        let cli =
+            Cli::try_parse_from(["mdp", "serve", "--port", "8080", "--no-open", "x.md"]).unwrap();
+        match cli.command {
+            Some(Command::Serve {
+                files,
+                port,
+                no_open,
+            }) => {
+                assert_eq!(files, vec![PathBuf::from("x.md")]);
+                assert_eq!(port, 8080);
+                assert!(no_open);
+            }
+            _ => panic!("expected serve subcommand"),
+        }
+    }
+
+    #[test]
+    fn export_requires_to() {
+        let ok = Cli::try_parse_from(["mdp", "export", "in.md", "--to", "out.html"]).unwrap();
+        match ok.command {
+            Some(Command::Export { file, to }) => {
+                assert_eq!(file, PathBuf::from("in.md"));
+                assert_eq!(to, PathBuf::from("out.html"));
+            }
+            _ => panic!("expected export subcommand"),
+        }
+        // Missing --to is a parse error, not a silent default.
+        assert!(Cli::try_parse_from(["mdp", "export", "in.md"]).is_err());
+    }
+
+    #[test]
+    fn bad_scheme_value_is_rejected() {
+        assert!(Cli::try_parse_from(["mdp", "--scheme", "sepia", "x.md"]).is_err());
+    }
+}
