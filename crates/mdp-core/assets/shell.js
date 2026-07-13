@@ -141,8 +141,21 @@
     renderMermaid()
       .catch(function () {})
       .then(function () {
+        // Wait for web fonts (KaTeX) to finish loading before signaling done,
+        // so an export/PDF capture gets real math glyphs rather than blanks.
+        return document.fonts && document.fonts.ready
+          ? document.fonts.ready
+          : null;
+      })
+      .catch(function () {})
+      .then(function () {
         document.documentElement.setAttribute("data-mdp-ready", "true");
         window.dispatchEvent(new Event("mdp:render-complete"));
+        // Signal a host that registered an IPC handler (e.g. PDF export waits
+        // for this before capturing). Absent in the plain preview; guarded.
+        if (window.ipc && typeof window.ipc.postMessage === "function") {
+          window.ipc.postMessage("render-complete");
+        }
       });
   }
 

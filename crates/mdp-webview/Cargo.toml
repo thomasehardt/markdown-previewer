@@ -15,3 +15,12 @@ repository.workspace = true
 mdp-core = { workspace = true }
 wry = { workspace = true }
 tao = { workspace = true }
+
+# macOS silent PDF export (design section 4.5): reach the WKWebView wry created
+# and call createPDFWithConfiguration through objc2. Proven by the Phase-7 spike.
+# Windows/Linux native PDF each need their own path and are not yet implemented.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-web-kit = "0.3"
+block2 = "0.6"

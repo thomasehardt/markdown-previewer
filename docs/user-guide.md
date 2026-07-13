@@ -75,7 +75,14 @@ to someone:
 mdp export notes.md --to notes.html
 ```
 
-The file has everything embedded (styles, fonts, math, diagrams). PDF export is
+The file has everything embedded (styles, fonts, math, diagrams). On macOS you
+can also export a PDF:
+
+```sh
+mdp export notes.md --to notes.pdf
+```
+
+A window appears briefly while it captures. PDF export on Windows and Linux is
 coming in a later version.
 
 ## What renders

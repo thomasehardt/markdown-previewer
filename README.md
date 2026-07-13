@@ -11,7 +11,7 @@ to build and run it.
 
 ## Status
 
-Phases 1 through 5 of the [phased plan](docs/design.md) are implemented. The
+All seven phases of the [phased plan](docs/design.md) are implemented. The
 display-agnostic core renders CommonMark plus GFM (tables, task lists,
 strikethrough, autolinks, tag filtering, footnotes, and alerts) into a fully
 self-contained HTML page, sanitized and styled by a neutral, token-based theme.
@@ -27,9 +27,13 @@ back to it if it cannot initialize. Either view offers a read-only "view source"
 toggle (a button, or press `s`) that shows the raw Markdown. When the file
 changes on disk, a non-intrusive banner offers to reload; it never swaps content
 on its own (disable with `--no-watch`). And `mdp export FILE --to out.html`
-writes a single self-contained HTML file that opens offline in any browser.
+writes a single self-contained HTML file that opens offline in any browser,
+while `--to out.pdf` captures a high-fidelity vector PDF (macOS today).
 
-Not yet implemented (later phases): PDF export (`mdp export --to file.pdf`).
+Platform status: macOS is verified end to end. Windows and Linux are designed
+but not yet built or tested; on Linux the webview needs `libwebkit2gtk` at
+runtime (with an automatic fallback to the local server), and native PDF export
+is macOS-only for now.
 
 ## Architecture
 

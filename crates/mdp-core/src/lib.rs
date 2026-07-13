@@ -77,7 +77,7 @@ pub enum ColorScheme {
 
 /// Options controlling [`render_document`]. Cheap to clone; all fields have
 /// sensible defaults.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct RenderOptions {
     /// Document title. When `None`, a neutral default is used.
     pub title: Option<String>,
@@ -90,6 +90,21 @@ pub struct RenderOptions {
     /// Start showing the read-only raw-source view instead of the rendered view
     /// (design section 4.2). The in-page toggle switches between them regardless.
     pub view_source_default: bool,
+    /// Include interactive chrome: the view-source toggle and the reload banner.
+    /// Disabled for PDF export so the captured page is just the document.
+    pub show_chrome: bool,
+}
+
+impl Default for RenderOptions {
+    fn default() -> Self {
+        Self {
+            title: None,
+            color_scheme: ColorScheme::Auto,
+            extra_theme_css: None,
+            view_source_default: false,
+            show_chrome: true,
+        }
+    }
 }
 
 /// The default document title when none is supplied.
@@ -386,6 +401,14 @@ fn assemble_page(body: &str, source_md: &str, title: &str, opts: &RenderOptions)
     };
     let source = escape_html_text(source_md);
 
+    // Interactive chrome (view-source toggle + reload banner). Omitted when
+    // show_chrome is off, e.g. PDF export captures just the document.
+    let chrome = if opts.show_chrome {
+        "<div id=\"mdp-reload-banner\" class=\"mdp-reload-banner\" role=\"status\" hidden>This file changed on disk. <button type=\"button\" id=\"mdp-reload-accept\">Reload</button> <button type=\"button\" id=\"mdp-reload-dismiss\">Dismiss</button></div>\n<button type=\"button\" id=\"mdp-view-toggle\" class=\"mdp-view-toggle\" aria-pressed=\"false\">View source</button>\n"
+    } else {
+        ""
+    };
+
     format!(
         "<!doctype html>\n\
 <html lang=\"en\"{scheme_attr}>\n\
@@ -397,9 +420,7 @@ fn assemble_page(body: &str, source_md: &str, title: &str, opts: &RenderOptions)
 {user_theme}<style data-mdp=\"shell\">{shell_css}</style>\n\
 {head_extra}</head>\n\
 <body{body_class}>\n\
-<div id=\"mdp-reload-banner\" class=\"mdp-reload-banner\" role=\"status\" hidden>This file changed on disk. <button type=\"button\" id=\"mdp-reload-accept\">Reload</button> <button type=\"button\" id=\"mdp-reload-dismiss\">Dismiss</button></div>\n\
-<button type=\"button\" id=\"mdp-view-toggle\" class=\"mdp-view-toggle\" aria-pressed=\"false\">View source</button>\n\
-<main class=\"mdp-document\">\n\
+{chrome}<main class=\"mdp-document\">\n\
 {body}</main>\n\
 <pre id=\"mdp-source\" class=\"mdp-source\" aria-label=\"Markdown source\"><code>{source}</code></pre>\n\
 {body_extra}<script data-mdp=\"shell\">{shell_js}</script>\n\
@@ -407,6 +428,7 @@ fn assemble_page(body: &str, source_md: &str, title: &str, opts: &RenderOptions)
 </html>\n",
         scheme_attr = scheme_attr,
         body_class = body_class,
+        chrome = chrome,
         source = source,
         title = escape_title(title),
         theme_css = theme_css,

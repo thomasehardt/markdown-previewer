@@ -11,7 +11,7 @@
 //! read-only: sanitized HTML, no editing affordances, no navigation off origin.
 
 use std::borrow::Cow;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -317,6 +317,136 @@ impl std::fmt::Display for FrontendError {
 }
 
 impl std::error::Error for FrontendError {}
+
+/// Export `doc` to a PDF at `out` (design section 4.5). macOS: load the document
+/// in a webview, wait for the shell's render-complete IPC signal (so Mermaid and
+/// KaTeX have finished), then capture silently via `WKWebView.createPDF`. A
+/// timed fallback captures even if the signal never arrives.
+///
+/// Known behavior (design 4.5): createPDF produces a single tall page, not
+/// paginated to Letter/A4, and the window briefly appears during capture.
+/// Windows/Linux native PDF are not yet implemented.
+#[cfg(target_os = "macos")]
+pub fn export_pdf(doc: &RenderedDoc, out: &Path) -> Result<(), FrontendError> {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use tao::event::Event;
+    use tao::event_loop::{ControlFlow, EventLoopBuilder};
+    use tao::platform::run_return::EventLoopExtRunReturn;
+    use tao::window::WindowBuilder;
+    use wry::{PageLoadEvent, WebViewBuilder, WebViewExtMacOS};
+
+    use block2::RcBlock;
+    use objc2_foundation::{MainThreadMarker, NSData, NSError};
+    use objc2_web_kit::WKPDFConfiguration;
+
+    enum PdfEvent {
+        Capture,
+        Done(Result<usize, String>),
+    }
+
+    let out_path = out.to_path_buf();
+    let html = doc.html.clone();
+
+    let mut event_loop = EventLoopBuilder::<PdfEvent>::with_user_event().build();
+    let proxy = event_loop.create_proxy();
+
+    let window = WindowBuilder::new()
+        .with_title("mdp export")
+        .with_inner_size(tao::dpi::LogicalSize::new(900.0, 1200.0))
+        .build(&event_loop)
+        .map_err(|e| FrontendError::Window(e.to_string()))?;
+
+    let ipc_proxy = proxy.clone();
+    let load_proxy = proxy.clone();
+    let webview = WebViewBuilder::new()
+        .with_html(html)
+        .with_ipc_handler(move |req: wry::http::Request<String>| {
+            if req.body().as_str() == "render-complete" {
+                let _ = ipc_proxy.send_event(PdfEvent::Capture);
+            }
+        })
+        .with_on_page_load_handler(move |event, _url| {
+            if matches!(event, PageLoadEvent::Finished) {
+                // Fallback: capture even if the render-complete signal is missed.
+                let p = load_proxy.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(3000));
+                    let _ = p.send_event(PdfEvent::Capture);
+                });
+            }
+        })
+        .build(&window)
+        .map_err(|e| FrontendError::WebView(e.to_string()))?;
+
+    let captured = AtomicBool::new(false);
+    let result: Rc<RefCell<Option<Result<usize, String>>>> = Rc::new(RefCell::new(None));
+    let loop_result = result.clone();
+
+    event_loop.run_return(move |event, _target, control_flow| {
+        *control_flow = ControlFlow::Wait;
+        match event {
+            Event::UserEvent(PdfEvent::Capture) => {
+                // Capture exactly once (both the IPC signal and the fallback fire).
+                if captured.swap(true, Ordering::SeqCst) {
+                    return;
+                }
+                let mtm = MainThreadMarker::new().expect("event loop runs on the main thread");
+                let wk = webview.webview();
+                // A nil-equivalent configuration captures the full page as one
+                // tall page; createPDF does not paginate (design 4.5).
+                let config = unsafe { WKPDFConfiguration::new(mtm) };
+                let done_proxy = proxy.clone();
+                let out_for_block = out_path.clone();
+                let handler = RcBlock::new(move |data: *mut NSData, err: *mut NSError| {
+                    let res = if !err.is_null() {
+                        Err(format!(
+                            "createPDF error: {}",
+                            unsafe { &*err }.localizedDescription()
+                        ))
+                    } else if data.is_null() {
+                        Err("createPDF returned neither data nor error".to_string())
+                    } else {
+                        let bytes = unsafe { &*data }.to_vec();
+                        match std::fs::write(&out_for_block, &bytes) {
+                            Ok(()) => Ok(bytes.len()),
+                            Err(e) => Err(format!("write failed: {e}")),
+                        }
+                    };
+                    let _ = done_proxy.send_event(PdfEvent::Done(res));
+                });
+                unsafe {
+                    wk.createPDFWithConfiguration_completionHandler(Some(&config), &handler);
+                }
+            }
+            Event::UserEvent(PdfEvent::Done(res)) => {
+                *loop_result.borrow_mut() = Some(res);
+                *control_flow = ControlFlow::Exit;
+            }
+            _ => {}
+        }
+    });
+
+    let outcome = result.borrow_mut().take();
+    match outcome {
+        Some(Ok(_)) => Ok(()),
+        Some(Err(e)) => Err(FrontendError::WebView(e)),
+        None => Err(FrontendError::WebView(
+            "PDF capture did not complete".to_string(),
+        )),
+    }
+}
+
+/// PDF export is currently implemented only on macOS (design 4.5). Windows and
+/// Linux each need their own native path.
+#[cfg(not(target_os = "macos"))]
+pub fn export_pdf(doc: &RenderedDoc, out: &Path) -> Result<(), FrontendError> {
+    let _ = (doc, out);
+    Err(FrontendError::WebView(
+        "PDF export is currently implemented only on macOS".to_string(),
+    ))
+}
 
 #[cfg(test)]
 mod tests {

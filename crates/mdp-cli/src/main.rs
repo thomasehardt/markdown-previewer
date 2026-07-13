@@ -216,17 +216,16 @@ impl RenderSpec {
                 color_scheme: scheme,
                 extra_theme_css: extra_theme_css.clone(),
                 view_source_default: view_source,
+                show_chrome: true,
             };
             render_document(&markdown, &opts)
         }
     }
 }
 
-/// Headless export: render `file` and write a self-contained HTML file to `out`
-/// (design section 4.4, Phase 6). The output inlines all CSS/JS/fonts, so math
-/// and diagrams render on open in any browser with no network access. Pre-
-/// freezing diagrams to static SVG needs a browser engine and is a later option;
-/// PDF export is Phase 7.
+/// Headless export (design section 4.4/4.5). `.html` writes a self-contained
+/// page (all CSS/JS/fonts inlined; math and diagrams render on open). `.pdf`
+/// captures a rendered page to PDF (macOS today; see `export_pdf_file`).
 fn run_export(
     file: &Path,
     out: &Path,
@@ -239,18 +238,53 @@ fn run_export(
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    if ext == "pdf" {
-        eprintln!("mdp: PDF export lands in Phase 7; export to a .html path for now.");
-        return ExitCode::from(2);
+    match ext.as_str() {
+        "pdf" => export_pdf_file(file, out, scheme, extra_theme_css),
+        "html" | "htm" => {
+            let markdown = match std::fs::read_to_string(file) {
+                Ok(md) => md,
+                Err(e) => {
+                    eprintln!("mdp: cannot read {}: {e}", file.display());
+                    return ExitCode::FAILURE;
+                }
+            };
+            let opts = RenderOptions {
+                title: file.file_name().map(|n| n.to_string_lossy().into_owned()),
+                color_scheme: scheme,
+                extra_theme_css,
+                view_source_default: view_source,
+                show_chrome: true,
+            };
+            let doc = render_document(&markdown, &opts);
+            match std::fs::write(out, &doc.html) {
+                Ok(()) => {
+                    eprintln!("mdp: wrote {}", out.display());
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("mdp: cannot write {}: {e}", out.display());
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        other => {
+            eprintln!(
+                "mdp: unsupported export target .{other} ({}); use .html or .pdf.",
+                out.display()
+            );
+            ExitCode::from(2)
+        }
     }
-    if ext != "html" && ext != "htm" {
-        eprintln!(
-            "mdp: unsupported export target {}; use a .html path.",
-            out.display()
-        );
-        return ExitCode::from(2);
-    }
+}
 
+/// Render `file` without interactive chrome and capture it to a PDF at `out`.
+#[cfg(feature = "webview")]
+fn export_pdf_file(
+    file: &Path,
+    out: &Path,
+    scheme: ColorScheme,
+    extra_theme_css: Option<String>,
+) -> ExitCode {
     let markdown = match std::fs::read_to_string(file) {
         Ok(md) => md,
         Err(e) => {
@@ -262,19 +296,33 @@ fn run_export(
         title: file.file_name().map(|n| n.to_string_lossy().into_owned()),
         color_scheme: scheme,
         extra_theme_css,
-        view_source_default: view_source,
+        view_source_default: false,
+        show_chrome: false,
     };
     let doc = render_document(&markdown, &opts);
-    match std::fs::write(out, &doc.html) {
+    match mdp_webview::export_pdf(&doc, out) {
         Ok(()) => {
             eprintln!("mdp: wrote {}", out.display());
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("mdp: cannot write {}: {e}", out.display());
+            eprintln!("mdp: PDF export failed: {e}");
             ExitCode::FAILURE
         }
     }
+}
+
+/// Without the `webview` feature there is no engine to capture a PDF.
+#[cfg(not(feature = "webview"))]
+fn export_pdf_file(
+    file: &Path,
+    out: &Path,
+    _scheme: ColorScheme,
+    _extra_theme_css: Option<String>,
+) -> ExitCode {
+    let _ = (file, out);
+    eprintln!("mdp: PDF export requires the `webview` feature (macOS).");
+    ExitCode::from(2)
 }
 
 /// Dispatch to the native webview frontend when the feature is compiled in.
@@ -468,14 +516,16 @@ mod tests {
     }
 
     #[test]
-    fn export_rejects_pdf_until_phase_7() {
+    fn export_rejects_unknown_format() {
+        // An unsupported target is rejected without writing anything. (PDF export
+        // is exercised end to end via the binary, not here: it needs a GUI event
+        // loop that cannot run inside the test harness.)
         let dir = tempfile::tempdir().unwrap();
         let input = dir.path().join("in.md");
         std::fs::write(&input, "# x\n").unwrap();
-        let out = dir.path().join("out.pdf");
+        let out = dir.path().join("out.rtf");
 
         let _ = run_export(&input, &out, ColorScheme::Auto, None, false);
-        // It exits without writing a (bogus) PDF.
         assert!(!out.exists(), "no output should be written for an unsupported target");
     }
 }

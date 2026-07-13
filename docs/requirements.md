@@ -20,7 +20,7 @@ requirement to the implementation plan in `docs/design.md` section 9.
 | FR6 | The preview is read-only (no editing affordances). | 1 | Done |
 | FR7 | A read-only "view source" toggle showing the raw Markdown. | 4 | Done (button or press `s`) |
 | FR8 | Export to a single self-contained HTML file (offline, diagrams and math preserved). | 6 | Done (renders on open; static-SVG freezing is a later option) |
-| FR9 | Export to PDF (offline, diagrams and math preserved). | 7 | Planned (macOS silent-PDF path proven by spike) |
+| FR9 | Export to PDF (offline, diagrams and math preserved). | 7 | Done on macOS (silent WKWebView createPDF; waits for render-complete + fonts; single tall page); Windows/Linux planned |
 | FR10 | Watch tracked file(s); on change, show a non-intrusive reload prompt. Never auto-swap the reader's view. | 5 | Done (parent-dir watch, ~300ms debounce, banner; `--no-watch`) |
 | FR11 | Instant launch feedback: a window/tab with a loading state appears immediately, then content swaps in. | 1 | Done (spinner shell) |
 | FR12 | Callable by other tools (including Claude Code) to display Markdown headlessly (serve on an ephemeral port; print the URL). | 3 | Done |
@@ -35,7 +35,7 @@ requirement to the implementation plan in `docs/design.md` section 9.
 |---|---|---|
 | NFR1 | Offline only at runtime: zero network calls; all rendering assets embedded in the binary. | Done for shipped scope; enforced by an offline-URL scan test |
 | NFR2 | Cross-platform: macOS, Linux, Windows. | macOS verified; Linux/Windows designed, not yet CI-tested |
-| NFR3 | Single binary where the OS allows (macOS, Windows). Linux carries a documented `libwebkit2gtk` runtime dependency with graceful fallback to the serve frontend. | Planned (fallback in Phase 3) |
+| NFR3 | Single binary where the OS allows (macOS, Windows). Linux carries a documented `libwebkit2gtk` runtime dependency with graceful fallback to the serve frontend. | Done (automatic webview->serve fallback wired); Linux single-binary caveat documented |
 | NFR4 | Fast launch: something visibly happens immediately on start. | Done (instant spinner) |
 | NFR5 | MIT licensed; every shipped dependency license-compatible (MIT/Apache-2.0/BSD/ISC/CC0/Unicode/OFL). | Done; `cargo-deny` CI gate Planned |
 | NFR6 | Implemented in Rust with a pinned toolchain (`rust-toolchain.toml`) for reproducible builds. | Done (Rust 1.97.0) |
