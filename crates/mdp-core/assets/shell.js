@@ -98,6 +98,11 @@
     if (!banner) {
       return;
     }
+    // A statically opened file (a file: URL) has no server to poll, so live
+    // reload is simply absent there (e.g. an exported HTML file).
+    if (window.location.protocol === "file:") {
+      return;
+    }
     var accept = document.getElementById("mdp-reload-accept");
     var dismiss = document.getElementById("mdp-reload-dismiss");
     var dismissed = false;

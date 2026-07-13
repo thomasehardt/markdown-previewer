@@ -11,7 +11,7 @@ how the offline asset vendoring works. For everyday use see the
 mdp [OPTIONS] [FILE]...                 preview (default path: native webview)
 mdp view  [FILE]... [--frontend ...]    explicit preview
 mdp serve [FILE]... [--port N] [--no-open]   local server (loopback + browser)
-mdp export <FILE> --to <OUT>            export to HTML/PDF (later phase)
+mdp export <FILE> --to <out.html>       write a self-contained HTML file
 ```
 
 Global options (apply to every path):
@@ -26,9 +26,8 @@ Global options (apply to every path):
 Status today: the default path and `view` open the native webview; `serve` (and
 `view --frontend serve`) run the local server; and the webview automatically
 falls back to the server if it cannot initialize (for example, a missing Linux
-webkit runtime). `export` is parsed and validated but reports that its frontend
-lands in Phase 6 (it exits non-zero rather than pretend). `--help` and
-`--version` work.
+webkit runtime). `export` writes a self-contained `.html`; exporting to `.pdf`
+reports that it lands in Phase 7. `--help` and `--version` work.
 
 ## Headless use (calling from another tool)
 
@@ -57,6 +56,15 @@ a dismissible "this file changed on disk" banner. It never swaps content on its
 own: the reader clicks Reload, which re-renders from disk. Disable with
 `--no-watch`. On network filesystems where events are unreliable, watching may
 miss changes; reopen the file in that case.
+
+## Export
+
+`mdp export <FILE> --to out.html` renders once and writes a single,
+self-contained HTML file: all CSS, JS, and fonts are inlined, so it opens
+offline in any browser, and math and diagrams render on open via the bundled
+libraries. The exported file is not watched and has no live reload. Diagrams are
+not yet pre-frozen to static SVG (that would need a browser engine at export
+time); `.pdf` export lands in Phase 7.
 
 ## Authoring a theme
 

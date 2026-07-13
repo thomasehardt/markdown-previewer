@@ -66,6 +66,18 @@ While a preview is open, `mdp` watches the file. When you save changes, a small
 banner appears offering to reload. It never reloads on its own, so it will not
 interrupt your reading. Turn watching off with `--no-watch`.
 
+## Saving a standalone copy
+
+Export a document to a single HTML file you can open anywhere, offline, or send
+to someone:
+
+```sh
+mdp export notes.md --to notes.html
+```
+
+The file has everything embedded (styles, fonts, math, diagrams). PDF export is
+coming in a later version.
+
 ## What renders
 
 - CommonMark plus GitHub-flavored Markdown: tables, task lists, strikethrough,

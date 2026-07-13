@@ -26,9 +26,10 @@ browser-based use, printing the URL to stdout; the webview automatically falls
 back to it if it cannot initialize. Either view offers a read-only "view source"
 toggle (a button, or press `s`) that shows the raw Markdown. When the file
 changes on disk, a non-intrusive banner offers to reload; it never swaps content
-on its own (disable with `--no-watch`).
+on its own (disable with `--no-watch`). And `mdp export FILE --to out.html`
+writes a single self-contained HTML file that opens offline in any browser.
 
-Not yet implemented (later phases): HTML/PDF export (`export`).
+Not yet implemented (later phases): PDF export (`mdp export --to file.pdf`).
 
 ## Architecture
 

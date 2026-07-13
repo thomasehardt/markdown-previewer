@@ -6,7 +6,7 @@
 //! `serve` and `export` are wired into the clap surface but their frontends
 //! land in later phases, so they report that plainly instead of pretending.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -112,9 +112,26 @@ fn main() -> ExitCode {
     let theme = config::resolve_theme(cli.theme.clone(), config.theme.clone());
     let scheme: ColorScheme = config::resolve_scheme(cli.scheme, config.scheme).into();
 
-    // Resolve the target file and the action from whichever surface was used.
-    // Phase 1/2 preview a single file; the surface accepts several so multi-file
-    // support is additive later.
+    // The theme is read once (it does not change during a session) and is shared
+    // by the export and preview paths.
+    let extra_theme_css = match &theme {
+        Some(path) => match std::fs::read_to_string(path) {
+            Ok(css) => Some(css),
+            Err(e) => {
+                eprintln!("mdp: cannot read theme {}: {e}", path.display());
+                return ExitCode::FAILURE;
+            }
+        },
+        None => None,
+    };
+
+    // Export is a headless one-shot: render and write a file, no display or watch.
+    if let Some(Command::Export { file, to }) = &cli.command {
+        return run_export(file, to, scheme, extra_theme_css, cli.view_source_default);
+    }
+
+    // Otherwise resolve the target file and the display action. Phase 1/2 preview
+    // a single file; the surface accepts several so multi-file support is additive.
     let (file, action) = match &cli.command {
         Some(Command::View { files, frontend }) => {
             let action = match frontend {
@@ -139,15 +156,8 @@ fn main() -> ExitCode {
                 open: !*no_open,
             },
         ),
-        Some(Command::Export { file, to }) => {
-            eprintln!(
-                "mdp: export to {} is not implemented yet (design Phase 6).",
-                to.display()
-            );
-            let _ = file;
-            return ExitCode::from(2);
-        }
-        None => (cli.files.first().cloned(), Action::Webview),
+        // Export was handled above; None (and any future command) lands here.
+        _ => (cli.files.first().cloned(), Action::Webview),
     };
 
     let Some(file) = file else {
@@ -155,19 +165,9 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     };
 
-    // Validate up front so failures are a clear early error, not a blank window.
-    // The theme is read once (it does not change during a session); the Markdown
-    // is re-read on every render so a reload picks up on-disk edits.
-    let extra_theme_css = match &theme {
-        Some(path) => match std::fs::read_to_string(path) {
-            Ok(css) => Some(css),
-            Err(e) => {
-                eprintln!("mdp: cannot read theme {}: {e}", path.display());
-                return ExitCode::FAILURE;
-            }
-        },
-        None => None,
-    };
+    // Confirm the input is readable up front, so failure is a clear early error
+    // rather than a blank window. The Markdown is re-read on every render so a
+    // reload picks up on-disk edits.
     if let Err(e) = std::fs::read_to_string(&file) {
         eprintln!("mdp: cannot read {}: {e}", file.display());
         return ExitCode::FAILURE;
@@ -218,6 +218,61 @@ impl RenderSpec {
                 view_source_default: view_source,
             };
             render_document(&markdown, &opts)
+        }
+    }
+}
+
+/// Headless export: render `file` and write a self-contained HTML file to `out`
+/// (design section 4.4, Phase 6). The output inlines all CSS/JS/fonts, so math
+/// and diagrams render on open in any browser with no network access. Pre-
+/// freezing diagrams to static SVG needs a browser engine and is a later option;
+/// PDF export is Phase 7.
+fn run_export(
+    file: &Path,
+    out: &Path,
+    scheme: ColorScheme,
+    extra_theme_css: Option<String>,
+    view_source: bool,
+) -> ExitCode {
+    let ext = out
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if ext == "pdf" {
+        eprintln!("mdp: PDF export lands in Phase 7; export to a .html path for now.");
+        return ExitCode::from(2);
+    }
+    if ext != "html" && ext != "htm" {
+        eprintln!(
+            "mdp: unsupported export target {}; use a .html path.",
+            out.display()
+        );
+        return ExitCode::from(2);
+    }
+
+    let markdown = match std::fs::read_to_string(file) {
+        Ok(md) => md,
+        Err(e) => {
+            eprintln!("mdp: cannot read {}: {e}", file.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    let opts = RenderOptions {
+        title: file.file_name().map(|n| n.to_string_lossy().into_owned()),
+        color_scheme: scheme,
+        extra_theme_css,
+        view_source_default: view_source,
+    };
+    let doc = render_document(&markdown, &opts);
+    match std::fs::write(out, &doc.html) {
+        Ok(()) => {
+            eprintln!("mdp: wrote {}", out.display());
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("mdp: cannot write {}: {e}", out.display());
+            ExitCode::FAILURE
         }
     }
 }
@@ -394,5 +449,33 @@ mod tests {
     #[test]
     fn bad_scheme_value_is_rejected() {
         assert!(Cli::try_parse_from(["mdp", "--scheme", "sepia", "x.md"]).is_err());
+    }
+
+    #[test]
+    fn export_writes_self_contained_html() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in.md");
+        std::fs::write(&input, "# Title\n\nHello **world**.\n").unwrap();
+        let out = dir.path().join("out.html");
+
+        let _ = run_export(&input, &out, ColorScheme::Auto, None, false);
+
+        let html = std::fs::read_to_string(&out).expect("export wrote the file");
+        assert!(html.contains("<h1"), "rendered heading present");
+        assert!(html.contains("Hello"), "body content present");
+        // Self-contained: the shell makes no network references for a plain doc.
+        assert!(!html.contains("http://") && !html.contains("https://"));
+    }
+
+    #[test]
+    fn export_rejects_pdf_until_phase_7() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in.md");
+        std::fs::write(&input, "# x\n").unwrap();
+        let out = dir.path().join("out.pdf");
+
+        let _ = run_export(&input, &out, ColorScheme::Auto, None, false);
+        // It exits without writing a (bogus) PDF.
+        assert!(!out.exists(), "no output should be written for an unsupported target");
     }
 }
