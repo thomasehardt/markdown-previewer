@@ -54,6 +54,12 @@ mdp --theme my-theme.css notes.md
 To make a theme your standing default so you do not pass the flag every time,
 set it in `config.toml` (see the power-user guide).
 
+## Viewing the raw Markdown
+
+Click **View source** (top-right), or press `s`, to switch between the rendered
+view and the raw Markdown. Both are read-only. Start in source view with
+`--view-source-default`.
+
 ## What renders
 
 - CommonMark plus GitHub-flavored Markdown: tables, task lists, strikethrough,

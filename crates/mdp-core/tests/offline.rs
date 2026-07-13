@@ -56,11 +56,26 @@ graph TD; A-->B;
 ```
 "#;
 
-/// The assembled shell: everything except the rendered Markdown body.
+/// The assembled shell: everything except user content. Both the rendered body
+/// (`<main>`) and the raw-source view (`<pre id="mdp-source">`) may legitimately
+/// carry user-authored URLs, so both are set aside before the offline scan.
 fn shell_only(html: &str) -> String {
-    let start = html.find("<main").expect("no <main> in output");
-    let end = html.find("</main>").expect("no </main> in output") + "</main>".len();
-    format!("{}{}", &html[..start], &html[end..])
+    let without_body = cut(html, "<main", "</main>");
+    cut(&without_body, "<pre id=\"mdp-source\"", "</pre>")
+}
+
+/// Remove the first `open..close` element, inclusive of the closing marker.
+fn cut(html: &str, open: &str, close: &str) -> String {
+    match html.find(open) {
+        Some(start) => {
+            let end = html[start..]
+                .find(close)
+                .map(|i| start + i + close.len())
+                .unwrap_or(html.len());
+            format!("{}{}", &html[..start], &html[end..])
+        }
+        None => html.to_string(),
+    }
 }
 
 /// Assert a fragment triggers no network fetch: no scheme, no protocol-relative

@@ -155,7 +155,7 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     };
 
-    let doc = match render_file(&file, theme.as_deref(), scheme) {
+    let doc = match render_file(&file, theme.as_deref(), scheme, cli.view_source_default) {
         Ok(doc) => doc,
         Err(code) => return code,
     };
@@ -173,6 +173,7 @@ fn render_file(
     file: &Path,
     theme: Option<&Path>,
     scheme: ColorScheme,
+    view_source: bool,
 ) -> Result<mdp_core::RenderedDoc, ExitCode> {
     let markdown = std::fs::read_to_string(file).map_err(|e| {
         eprintln!("mdp: cannot read {}: {e}", file.display());
@@ -191,6 +192,7 @@ fn render_file(
         title: file.file_name().map(|n| n.to_string_lossy().into_owned()),
         color_scheme: scheme,
         extra_theme_css,
+        view_source_default: view_source,
     };
 
     Ok(mdp_core::render_document(&markdown, &opts))

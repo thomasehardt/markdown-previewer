@@ -11,7 +11,7 @@ to build and run it.
 
 ## Status
 
-Phases 1 through 3 of the [phased plan](docs/design.md) are implemented. The
+Phases 1 through 4 of the [phased plan](docs/design.md) are implemented. The
 display-agnostic core renders CommonMark plus GFM (tables, task lists,
 strikethrough, autolinks, tag filtering, footnotes, and alerts) into a fully
 self-contained HTML page, sanitized and styled by a neutral, token-based theme.
@@ -23,10 +23,11 @@ look. The default `mdp <FILE>` path opens the page read-only in a native window
 (wry + tao) behind an instant spinner shell. The local-server frontend
 (`mdp serve`) serves the same page on a loopback port for headless or
 browser-based use, printing the URL to stdout; the webview automatically falls
-back to it if it cannot initialize.
+back to it if it cannot initialize. Either view offers a read-only "view source"
+toggle (a button, or press `s`) that shows the raw Markdown.
 
-Not yet implemented (later phases): a read-only "view source" toggle, file
-watching with reload prompts, and HTML/PDF export (`export`).
+Not yet implemented (later phases): file watching with reload prompts, and
+HTML/PDF export (`export`).
 
 ## Architecture
 

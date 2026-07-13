@@ -82,6 +82,9 @@ pub struct RenderOptions {
     /// it need only redefine the tokens it wants to override (design section
     /// 4.6). This is the `--theme` rebrand surface; Phase 1 wires the plumbing.
     pub extra_theme_css: Option<String>,
+    /// Start showing the read-only raw-source view instead of the rendered view
+    /// (design section 4.2). The in-page toggle switches between them regardless.
+    pub view_source_default: bool,
 }
 
 /// The default document title when none is supplied.
@@ -96,7 +99,7 @@ pub fn render_document(markdown: &str, opts: &RenderOptions) -> RenderedDoc {
     let dirty = markdown_to_html(markdown);
     let clean = sanitize(&dirty);
     let title = opts.title.clone().unwrap_or_else(|| DEFAULT_TITLE.to_string());
-    let html = assemble_page(&clean, &title, opts);
+    let html = assemble_page(&clean, markdown, &title, opts);
     RenderedDoc { html, title }
 }
 
@@ -322,7 +325,7 @@ fn sanitize(html: &str) -> String {
 ///
 /// The `data-mdp="..."` markers let tests redact the large asset blobs (design
 /// section 7) while keeping the Markdown-derived body reviewable.
-fn assemble_page(body: &str, title: &str, opts: &RenderOptions) -> String {
+fn assemble_page(body: &str, source_md: &str, title: &str, opts: &RenderOptions) -> String {
     let theme_css = load_asset("theme.css");
     let shell_css = load_asset("shell.css");
     let shell_js = load_asset("shell.js");
@@ -371,6 +374,13 @@ fn assemble_page(body: &str, title: &str, opts: &RenderOptions) -> String {
         }
     }
 
+    let body_class = if opts.view_source_default {
+        " class=\"mdp-view-source-active\""
+    } else {
+        ""
+    };
+    let source = escape_html_text(source_md);
+
     format!(
         "<!doctype html>\n\
 <html lang=\"en\"{scheme_attr}>\n\
@@ -381,13 +391,17 @@ fn assemble_page(body: &str, title: &str, opts: &RenderOptions) -> String {
 <style data-mdp=\"theme\">{theme_css}</style>\n\
 {user_theme}<style data-mdp=\"shell\">{shell_css}</style>\n\
 {head_extra}</head>\n\
-<body>\n\
+<body{body_class}>\n\
+<button type=\"button\" id=\"mdp-view-toggle\" class=\"mdp-view-toggle\" aria-pressed=\"false\">View source</button>\n\
 <main class=\"mdp-document\">\n\
 {body}</main>\n\
+<pre id=\"mdp-source\" class=\"mdp-source\" aria-label=\"Markdown source\"><code>{source}</code></pre>\n\
 {body_extra}<script data-mdp=\"shell\">{shell_js}</script>\n\
 </body>\n\
 </html>\n",
         scheme_attr = scheme_attr,
+        body_class = body_class,
+        source = source,
         title = escape_title(title),
         theme_css = theme_css,
         user_theme = user_theme,
@@ -601,6 +615,36 @@ mod tests {
     fn no_user_theme_block_when_none() {
         let doc = render_document("hi", &RenderOptions::default());
         assert!(!doc.html.contains("data-mdp=\"user-theme\""));
+    }
+
+    #[test]
+    fn view_source_pre_holds_escaped_raw_markdown() {
+        let md = "# Hi\n\n<script>evil()</script> and `code`";
+        let doc = render_document(md, &RenderOptions::default());
+        assert!(doc.html.contains("<pre id=\"mdp-source\""));
+        // The raw markdown appears as escaped text: tags shown, never live.
+        assert!(doc.html.contains("&lt;script&gt;evil()&lt;/script&gt;"));
+        assert!(doc.html.contains("# Hi"));
+        // Read-only: no editing affordance anywhere in the page.
+        assert!(!doc.html.contains("contenteditable"));
+    }
+
+    #[test]
+    fn view_source_default_activates_source_view() {
+        let on = render_document(
+            "# x",
+            &RenderOptions {
+                view_source_default: true,
+                ..Default::default()
+            },
+        );
+        assert!(on.html.contains("<body class=\"mdp-view-source-active\">"));
+
+        let off = render_document("# x", &RenderOptions::default());
+        // Check the <body> tag itself: the class name also appears inside the
+        // inlined toggle script, so a whole-page scan would be misleading.
+        assert!(off.html.contains("<body>\n"));
+        assert!(!off.html.contains("<body class=\"mdp-view-source-active\">"));
     }
 
     /// rust-embed reads `assets/` from disk in debug builds, so the gitignored

@@ -18,7 +18,7 @@ requirement to the implementation plan in `docs/design.md` section 9.
 | FR4 | Syntax-highlight fenced code blocks. | 2 | Done |
 | FR5 | Launch from the CLI against one or more files, opening straight into a rendered preview. | 1 | Done |
 | FR6 | The preview is read-only (no editing affordances). | 1 | Done |
-| FR7 | A read-only "view source" toggle showing the raw Markdown. | 4 | Planned |
+| FR7 | A read-only "view source" toggle showing the raw Markdown. | 4 | Done (button or press `s`) |
 | FR8 | Export to a single self-contained HTML file (offline, diagrams and math preserved). | 6 | Planned |
 | FR9 | Export to PDF (offline, diagrams and math preserved). | 7 | Planned (macOS silent-PDF path proven by spike) |
 | FR10 | Watch tracked file(s); on change, show a non-intrusive reload prompt. Never auto-swap the reader's view. | 5 | Planned |

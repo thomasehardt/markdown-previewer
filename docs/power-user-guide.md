@@ -21,7 +21,7 @@ Global options (apply to every path):
 | `--theme <PATH>` | Layer a theme CSS file over the built-in default. |
 | `--scheme <auto\|light\|dark>` | Color scheme. Unset follows `config.toml`, then the OS. |
 | `--no-watch` | Disable file watching (wired for a later phase). |
-| `--view-source-default` | Open showing raw source (wired for a later phase). |
+| `--view-source-default` | Open showing the read-only raw source instead of the rendered view (toggle in-page with the button or `s`). |
 
 Status today: the default path and `view` open the native webview; `serve` (and
 `view --frontend serve`) run the local server; and the webview automatically

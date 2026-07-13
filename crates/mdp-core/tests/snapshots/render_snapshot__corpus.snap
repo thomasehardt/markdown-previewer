@@ -1,6 +1,5 @@
 ---
 source: crates/mdp-core/tests/render_snapshot.rs
-assertion_line: 58
 expression: doc.html
 ---
 <!doctype html>
@@ -16,6 +15,7 @@ expression: doc.html
 <script data-mdp="katex-lib">/* KATEX_JS redacted */</script>
 </head>
 <body>
+<button type="button" id="mdp-view-toggle" class="mdp-view-toggle" aria-pressed="false">View source</button>
 <main class="mdp-document">
 <h1>Document Title</h1>
 <p>A paragraph with <strong>strong</strong>, <em>emphasis</em>, <del>strikethrough</del>, <code>inline code</code>, and
@@ -99,6 +99,7 @@ on its own line:</p>
 </ol>
 </section>
 </main>
+<pre id="mdp-source">/* RAW_SOURCE redacted */</pre>
 <script data-mdp="mermaid-lib">/* MERMAID_JS redacted */</script>
 <script data-mdp="mermaid-init">mermaid.initialize({startOnLoad:false,securityLevel:"strict"});</script>
 <script data-mdp="shell">/* SHELL_JS redacted */</script>

@@ -22,6 +22,12 @@ fn redacted<F: FnOnce()>(f: F) {
         r#"(?s)<script data-mdp="shell">.*?</script>"#,
         r#"<script data-mdp="shell">/* SHELL_JS redacted */</script>"#,
     );
+    // The raw-source <pre> just echoes the fixture input; redact it so the
+    // snapshot reviews the rendered markup, not a duplicate of the source.
+    settings.add_filter(
+        r#"(?s)<pre id="mdp-source"[^>]*>.*?</pre>"#,
+        r#"<pre id="mdp-source">/* RAW_SOURCE redacted */</pre>"#,
+    );
     // Phase 2 asset blobs: the generated highlight CSS and the large vendored
     // KaTeX/Mermaid libraries. Redacted so the snapshot reviews the body's
     // highlighted/math/mermaid markup and which hooks are injected, staying

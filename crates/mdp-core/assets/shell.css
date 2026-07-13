@@ -187,3 +187,56 @@ body {
 .mdp-document sup.footnote-ref {
   font-size: 0.75em;
 }
+
+/* View-source toggle (design section 4.2). A fixed button switches between the
+ * rendered document and a read-only <pre> of the raw Markdown. Token-driven. */
+.mdp-view-toggle {
+  position: fixed;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 10;
+  padding: var(--space-1) var(--space-3);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  color: var(--text-body);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0.85;
+}
+.mdp-view-toggle:hover {
+  opacity: 1;
+}
+
+.mdp-source {
+  display: none;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4);
+  min-height: 100vh;
+  background: var(--surface-card);
+  color: var(--text-body);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.55;
+  overflow-x: auto;
+}
+.mdp-source code {
+  font-family: inherit;
+  background: none;
+  color: inherit;
+  padding: 0;
+}
+
+/* Toggle: swap which view is shown. */
+body.mdp-view-source-active .mdp-document {
+  display: none;
+}
+body.mdp-view-source-active .mdp-source {
+  display: block;
+}

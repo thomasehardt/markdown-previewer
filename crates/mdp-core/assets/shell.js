@@ -54,7 +54,42 @@
     }
   }
 
+  /* View-source toggle (design section 4.2). Swaps the rendered document and
+   * the read-only raw-source <pre> entirely in-page; it never mutates or
+   * refetches anything, so it behaves identically under the webview and serve
+   * frontends. Remembers each view's scroll position across toggles. */
+  function setupViewToggle() {
+    var btn = document.getElementById("mdp-view-toggle");
+    if (!btn) {
+      return;
+    }
+    var scroll = { rendered: 0, source: 0 };
+    function isSource() {
+      return document.body.classList.contains("mdp-view-source-active");
+    }
+    function sync() {
+      var src = isSource();
+      btn.textContent = src ? "View rendered" : "View source";
+      btn.setAttribute("aria-pressed", src ? "true" : "false");
+    }
+    function toggle() {
+      scroll[isSource() ? "source" : "rendered"] = window.scrollY;
+      document.body.classList.toggle("mdp-view-source-active");
+      sync();
+      window.scrollTo(0, scroll[isSource() ? "source" : "rendered"] || 0);
+    }
+    btn.addEventListener("click", toggle);
+    document.addEventListener("keydown", function (e) {
+      /* "s" toggles, unless a modifier is held (leave browser shortcuts alone). */
+      if (e.key === "s" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        toggle();
+      }
+    });
+    sync();
+  }
+
   function ready() {
+    setupViewToggle();
     renderMath();
     renderMermaid()
       .catch(function () {})

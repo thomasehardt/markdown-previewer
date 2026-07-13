@@ -30,9 +30,20 @@ fn render(md: &str) -> String {
     render_document(md, &RenderOptions::default()).html
 }
 
+/// The rendered document body only (the executable region), excluding the inert
+/// raw-source `<pre>` view. That view echoes the raw Markdown as escaped text,
+/// so it legitimately contains the attack strings as harmless visible
+/// characters; the sanitization guarantee is about what the browser executes.
+fn rendered_body(md: &str) -> String {
+    let html = render(md);
+    let start = html.find("<main").expect("<main> in output");
+    let end = html.find("</main>").expect("</main> in output");
+    html[start..end].to_string()
+}
+
 #[test]
 fn strips_script_tag_and_its_payload() {
-    let html = render(MIXED);
+    let html = rendered_body(MIXED);
     // The only <script> in the page is our own app shell, tagged with a
     // data-mdp attribute; no bare markdown-injected script survives.
     assert!(
@@ -47,7 +58,7 @@ fn strips_script_tag_and_its_payload() {
 
 #[test]
 fn strips_javascript_url() {
-    let html = render(MIXED);
+    let html = rendered_body(MIXED);
     assert!(
         !html.contains("javascript:"),
         "a javascript: URL survived sanitization"
@@ -57,14 +68,14 @@ fn strips_javascript_url() {
 
 #[test]
 fn strips_event_handlers() {
-    let html = render(MIXED);
+    let html = rendered_body(MIXED);
     assert!(!html.contains("onerror"), "an onerror handler survived");
     assert!(!html.contains("xss-onerror"), "onerror payload survived");
 }
 
 #[test]
 fn strips_iframe() {
-    let html = render(MIXED);
+    let html = rendered_body(MIXED);
     assert!(!html.contains("<iframe"), "an iframe survived sanitization");
 }
 
