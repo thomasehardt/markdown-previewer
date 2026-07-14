@@ -986,6 +986,17 @@ mod tests {
     }
 
     #[test]
+    fn extract_headings_tolerates_malformed_markup() {
+        // A non-heading `<h` (<hr>), a bad level (<h9>), and an unclosed heading
+        // must not derail extraction; only the well-formed h2 yields an entry.
+        let hs = extract_headings(
+            "<hr><h9 id=\"x\">nope</h9><h2 id=\"ok\">Good</h2><h3 id=\"z\">unclosed",
+        );
+        assert_eq!(hs.len(), 1);
+        assert_eq!(hs[0].id, "ok");
+    }
+
+    #[test]
     fn public_types_expose_debug_and_clone() {
         // Debug and Clone are part of the public API; exercise them.
         let opts = RenderOptions::default();

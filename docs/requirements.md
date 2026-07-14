@@ -41,7 +41,7 @@ requirement to the implementation plan in `docs/design.md` section 9.
 | NFR4 | Fast launch: something visibly happens immediately on start. | Done (instant spinner) |
 | NFR5 | MIT licensed; every shipped dependency license-compatible (MIT/Apache-2.0/BSD/ISC/CC0/Unicode/OFL). | Done; `cargo-deny` CI gate Planned |
 | NFR6 | Implemented in Rust with a pinned toolchain (`rust-toolchain.toml`) for reproducible builds. | Done (Rust 1.97.0) |
-| NFR7 | Reasonable 100% test coverage on core logic (skip trivial glue like getters/setters); the coverage gate runs on `mdp-core`. | Partial: the render pipeline is exercised by 46 core tests, but raw `mdp-core` line coverage is ~71% (lib.rs ~68%, watch.rs ~91%), depressed by derive/HTML-assembly boilerplate. It slipped during the feature batch (not re-measured each step). CI floor is 65 as a regression guard; raising it is a backlog item. |
+| NFR7 | Reasonable 100% test coverage on core logic (skip trivial glue like getters/setters); the coverage gate runs on `mdp-core`. | Done (~96% line/region on `mdp-core`, clean measurement; the few uncovered lines are a packaging `panic!`, release-only asset arms, and defensive fallbacks). CI floor 90. |
 | NFR8 | Elegant, modern visual design. Neutral default theme; no company branding baked into the shipped tool. | Done (semantic-token theme, neutral default) |
 | NFR9 | Security: untrusted Markdown HTML is sanitized (ammonia allowlist); no script execution from document content; read-only. | Done (sanitization corpus test) |
 | NFR10 | No Docker. User-local, reproducible install (rustup toolchain + Cargo). | Done |
@@ -70,10 +70,6 @@ Tracked work that is deliberately not done yet:
    cargo-dist and GitHub Releases) and a Homebrew formula, so users need not
    build from source. Depends on the Windows/Linux work. `scripts/install.sh`
    (`cargo install` from source) covers local installs today.
-6. **Raise `mdp-core` coverage** toward the reasonable-100% bar. It slipped to
-   ~71% line during the feature batch (HTML-assembly branches and the growing
-   set of derived data types are undertested); the render pipeline itself is
-   covered. Re-measure coverage per change going forward.
 
 ## How this list is maintained
 

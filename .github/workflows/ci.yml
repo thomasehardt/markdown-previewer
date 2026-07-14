@@ -65,12 +65,10 @@ jobs:
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cargo-llvm-cov
-      # The pure core needs no webview deps. This floor is a regression guard,
-      # not the target: the render pipeline is well exercised, but the raw figure
-      # is depressed by derive boilerplate and HTML-assembly branches. Raising it
-      # toward the "reasonable 100%" bar is a tracked backlog item.
+      # The pure core needs no webview deps. On a clean measurement mdp-core is
+      # ~96% line coverage; this floor leaves headroom for churn.
       - name: Coverage (mdp-core)
-        run: cargo llvm-cov -p mdp-core --summary-only --fail-under-lines 65
+        run: cargo llvm-cov -p mdp-core --summary-only --fail-under-lines 90
 
   deny:
     name: license gate
