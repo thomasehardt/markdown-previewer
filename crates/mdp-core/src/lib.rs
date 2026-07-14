@@ -59,6 +59,29 @@ pub struct RenderedDoc {
     pub title: String,
 }
 
+/// One entry in the multi-file navigation bar (multi-file preview).
+#[derive(Debug, Clone)]
+pub struct NavItem {
+    /// Display label (typically the file name).
+    pub label: String,
+    /// Frontend-specific URL that switches to this document.
+    pub href: String,
+    /// Whether this is the document currently shown.
+    pub current: bool,
+}
+
+/// A source of one or more documents a frontend can render on demand. The CLI
+/// implements it over the file list; a frontend calls [`DocSource::render`] for
+/// the requested index, passing a closure that builds that frontend's own
+/// switch URLs so the file-nav bar links stay frontend-appropriate.
+pub trait DocSource: Send + Sync {
+    /// Number of documents available.
+    fn count(&self) -> usize;
+    /// Render the `index`-th document. `href(j)` yields the URL that switches to
+    /// document `j` in the calling frontend.
+    fn render(&self, index: usize, href: &dyn Fn(usize) -> String) -> RenderedDoc;
+}
+
 /// Which color scheme the rendered page should present.
 ///
 /// [`ColorScheme::Auto`] follows the viewer's OS preference via
@@ -93,6 +116,9 @@ pub struct RenderOptions {
     /// Include interactive chrome: the view-source toggle and the reload banner.
     /// Disabled for PDF export so the captured page is just the document.
     pub show_chrome: bool,
+    /// Multi-file navigation entries. With two or more (and chrome shown), a
+    /// file switcher bar is rendered. Empty for a single file.
+    pub file_nav: Vec<NavItem>,
 }
 
 impl Default for RenderOptions {
@@ -103,6 +129,7 @@ impl Default for RenderOptions {
             extra_theme_css: None,
             view_source_default: false,
             show_chrome: true,
+            file_nav: Vec::new(),
         }
     }
 }
@@ -407,6 +434,8 @@ fn assemble_page(body: &str, source_md: &str, title: &str, opts: &RenderOptions)
     // Interactive chrome (view-source toggle + reload banner). Omitted when
     // show_chrome is off, e.g. PDF export captures just the document.
     let chrome = if opts.show_chrome {
+        // A file switcher bar when previewing multiple files.
+        let files_bar = build_files_bar(&opts.file_nav);
         // A Contents toggle + TOC sidebar only when the document has headings.
         let (toc_nav, contents_btn) = match build_toc(body) {
             Some(nav) => (
@@ -416,7 +445,7 @@ fn assemble_page(body: &str, source_md: &str, title: &str, opts: &RenderOptions)
             None => (String::new(), ""),
         };
         format!(
-            "<div id=\"mdp-reload-banner\" class=\"mdp-reload-banner\" role=\"status\" hidden>This file changed on disk. <button type=\"button\" id=\"mdp-reload-accept\">Reload</button> <button type=\"button\" id=\"mdp-reload-dismiss\">Dismiss</button></div>\n\
+            "{files_bar}<div id=\"mdp-reload-banner\" class=\"mdp-reload-banner\" role=\"status\" hidden>This file changed on disk. <button type=\"button\" id=\"mdp-reload-accept\">Reload</button> <button type=\"button\" id=\"mdp-reload-dismiss\">Dismiss</button></div>\n\
 {toc_nav}\
 <div class=\"mdp-toolbar\" role=\"toolbar\" aria-label=\"Preview settings\">\
 {contents_btn}\
@@ -488,6 +517,29 @@ fn build_toc(html: &str) -> Option<String> {
     }
     nav.push_str("</ul></nav>");
     Some(nav)
+}
+
+/// Build the file switcher bar from `items`. Empty for fewer than two files.
+fn build_files_bar(items: &[NavItem]) -> String {
+    if items.len() < 2 {
+        return String::new();
+    }
+    let mut s = String::from("<nav class=\"mdp-files\" aria-label=\"Files\"><ul>");
+    for item in items {
+        let cls = if item.current {
+            "mdp-file mdp-file-current"
+        } else {
+            "mdp-file"
+        };
+        let _ = write!(
+            s,
+            "<li class=\"{cls}\"><a href=\"{}\">{}</a></li>",
+            escape_attr(&item.href),
+            escape_html_text(&item.label)
+        );
+    }
+    s.push_str("</ul></nav>");
+    s
 }
 
 /// Scan rendered HTML for `<h1>`..`<h6>` elements carrying an `id`, returning
@@ -826,6 +878,44 @@ mod tests {
             },
         );
         assert!(!doc.html.contains("<nav class=\"mdp-toc\""));
+    }
+
+    #[test]
+    fn file_nav_bar_shows_for_multiple_files() {
+        let opts = RenderOptions {
+            file_nav: vec![
+                NavItem {
+                    label: "a.md".into(),
+                    href: "/?doc=0".into(),
+                    current: true,
+                },
+                NavItem {
+                    label: "b.md".into(),
+                    href: "/?doc=1".into(),
+                    current: false,
+                },
+            ],
+            ..Default::default()
+        };
+        let doc = render_document("# x", &opts);
+        assert!(doc.html.contains("<nav class=\"mdp-files\""));
+        assert!(doc.html.contains("a.md") && doc.html.contains("b.md"));
+        assert!(doc.html.contains("mdp-file-current"));
+        assert!(doc.html.contains("href=\"/?doc=1\""));
+    }
+
+    #[test]
+    fn no_file_nav_bar_for_single_file() {
+        let opts = RenderOptions {
+            file_nav: vec![NavItem {
+                label: "a.md".into(),
+                href: "/?doc=0".into(),
+                current: true,
+            }],
+            ..Default::default()
+        };
+        let doc = render_document("# x", &opts);
+        assert!(!doc.html.contains("<nav class=\"mdp-files\""));
     }
 
     /// rust-embed reads `assets/` from disk in debug builds, so the gitignored

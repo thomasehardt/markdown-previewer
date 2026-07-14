@@ -8,9 +8,10 @@
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use clap::{Parser, Subcommand, ValueEnum};
-use mdp_core::{render_document, ColorScheme, RenderOptions, RenderedDoc};
+use mdp_core::{render_document, ColorScheme, DocSource, NavItem, RenderOptions, RenderedDoc};
 
 mod config;
 use config::Config;
@@ -130,9 +131,9 @@ fn main() -> ExitCode {
         return run_export(file, to, scheme, extra_theme_css, cli.view_source_default);
     }
 
-    // Otherwise resolve the target file and the display action. Phase 1/2 preview
-    // a single file; the surface accepts several so multi-file support is additive.
-    let (file, action) = match &cli.command {
+    // Otherwise resolve the target files and the display action. Multiple files
+    // are previewed with a file switcher; a single file is shown directly.
+    let (files, action) = match &cli.command {
         Some(Command::View { files, frontend }) => {
             let action = match frontend {
                 Frontend::Webview => Action::Webview,
@@ -143,48 +144,48 @@ fn main() -> ExitCode {
                     open: true,
                 },
             };
-            (files.first().cloned(), action)
+            (files.clone(), action)
         }
         Some(Command::Serve {
             files,
             port,
             no_open,
         }) => (
-            files.first().cloned(),
+            files.clone(),
             Action::Serve {
                 port: *port,
                 open: !*no_open,
             },
         ),
         // Export was handled above; None (and any future command) lands here.
-        _ => (cli.files.first().cloned(), Action::Webview),
+        _ => (cli.files.clone(), Action::Webview),
     };
 
-    let Some(file) = file else {
+    let Some(first) = files.first() else {
         eprintln!("mdp: no input file given. Try `mdp <FILE>` or `mdp --help`.");
         return ExitCode::from(2);
     };
-
-    // Confirm the input is readable up front, so failure is a clear early error
-    // rather than a blank window. The Markdown is re-read on every render so a
-    // reload picks up on-disk edits.
-    if let Err(e) = std::fs::read_to_string(&file) {
-        eprintln!("mdp: cannot read {}: {e}", file.display());
+    // Confirm the first (initially-shown) file is readable up front, so failure
+    // is a clear early error rather than a blank window. Each file is re-read on
+    // render, so a reload picks up on-disk edits.
+    if let Err(e) = std::fs::read_to_string(first) {
+        eprintln!("mdp: cannot read {}: {e}", first.display());
         return ExitCode::FAILURE;
     }
 
-    let spec = RenderSpec {
-        file: file.clone(),
+    // Watching drives the reload banner; watch every previewed file.
+    let watch_paths: Vec<PathBuf> = if cli.no_watch { Vec::new() } else { files.clone() };
+
+    let source: Arc<dyn DocSource> = Arc::new(RenderSpec {
+        files,
         scheme,
         extra_theme_css,
         view_source: cli.view_source_default,
-    };
-    // Watching the input file drives the reload banner; --no-watch disables it.
-    let watch_paths: Vec<PathBuf> = if cli.no_watch { Vec::new() } else { vec![file] };
+    });
 
     match action {
-        Action::Webview => open_webview(&spec, &watch_paths),
-        Action::Serve { port, open } => open_serve(&spec, &watch_paths, port, open),
+        Action::Webview => open_webview(&source, &watch_paths),
+        Action::Serve { port, open } => open_serve(&source, &watch_paths, port, open),
     }
 }
 
@@ -192,35 +193,54 @@ fn main() -> ExitCode {
 /// `renderer()` call produces a fresh closure so a frontend can be handed one
 /// and the fallback path can build another.
 struct RenderSpec {
-    file: PathBuf,
+    files: Vec<PathBuf>,
     scheme: ColorScheme,
     extra_theme_css: Option<String>,
     view_source: bool,
 }
 
-impl RenderSpec {
-    /// Build a render closure the frontends call to (re)render from disk. The
-    /// Markdown is read per call so a reload reflects on-disk edits; a read
-    /// failure renders a small error page rather than crashing the frontend.
-    fn renderer(&self) -> impl Fn() -> RenderedDoc + Send + Sync + 'static {
-        let file = self.file.clone();
-        let scheme = self.scheme;
-        let extra_theme_css = self.extra_theme_css.clone();
-        let view_source = self.view_source;
-        let title = file.file_name().map(|n| n.to_string_lossy().into_owned());
-        move || {
-            let markdown = std::fs::read_to_string(&file)
-                .unwrap_or_else(|e| format!("# Cannot read file\n\n`{}`: {e}\n", file.display()));
-            let opts = RenderOptions {
-                title: title.clone(),
-                color_scheme: scheme,
-                extra_theme_css: extra_theme_css.clone(),
-                view_source_default: view_source,
-                show_chrome: true,
-            };
-            render_document(&markdown, &opts)
-        }
+impl DocSource for RenderSpec {
+    fn count(&self) -> usize {
+        self.files.len()
     }
+
+    /// Render the `index`-th file from disk (read per call so a reload reflects
+    /// on-disk edits; a read failure renders a small error page). When there are
+    /// multiple files, a file-nav bar is built with the frontend's switch URLs.
+    fn render(&self, index: usize, href: &dyn Fn(usize) -> String) -> RenderedDoc {
+        let file = &self.files[index];
+        let markdown = std::fs::read_to_string(file)
+            .unwrap_or_else(|e| format!("# Cannot read file\n\n`{}`: {e}\n", file.display()));
+        let file_nav = if self.files.len() >= 2 {
+            self.files
+                .iter()
+                .enumerate()
+                .map(|(j, f)| NavItem {
+                    label: file_label(f),
+                    href: href(j),
+                    current: j == index,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let opts = RenderOptions {
+            title: file.file_name().map(|n| n.to_string_lossy().into_owned()),
+            color_scheme: self.scheme,
+            extra_theme_css: self.extra_theme_css.clone(),
+            view_source_default: self.view_source,
+            show_chrome: true,
+            file_nav,
+        };
+        render_document(&markdown, &opts)
+    }
+}
+
+/// A short label for a file path (the file name, or the path if it has none).
+fn file_label(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string())
 }
 
 /// Headless export (design section 4.4/4.5). `.html` writes a self-contained
@@ -254,6 +274,7 @@ fn run_export(
                 extra_theme_css,
                 view_source_default: view_source,
                 show_chrome: true,
+                file_nav: Vec::new(),
             };
             let doc = render_document(&markdown, &opts);
             match std::fs::write(out, &doc.html) {
@@ -298,6 +319,7 @@ fn export_pdf_file(
         extra_theme_css,
         view_source_default: false,
         show_chrome: false,
+        file_nav: Vec::new(),
     };
     let doc = render_document(&markdown, &opts);
     match mdp_webview::export_pdf(&doc, out) {
@@ -332,15 +354,15 @@ fn export_pdf_file(
 /// cannot initialize (design risk #5: e.g. a missing Linux webkit runtime), we
 /// automatically fall back to the local-server frontend when it is available.
 #[cfg(feature = "webview")]
-fn open_webview(spec: &RenderSpec, watch: &[PathBuf]) -> ExitCode {
-    match mdp_webview::show(spec.renderer(), watch) {
+fn open_webview(source: &Arc<dyn DocSource>, watch: &[PathBuf]) -> ExitCode {
+    match mdp_webview::show(source.clone(), watch) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("mdp: {e}");
             #[cfg(feature = "serve")]
             {
                 eprintln!("mdp: falling back to the local-server frontend.");
-                open_serve(spec, watch, 0, true)
+                open_serve(source, watch, 0, true)
             }
             #[cfg(not(feature = "serve"))]
             {
@@ -353,15 +375,15 @@ fn open_webview(spec: &RenderSpec, watch: &[PathBuf]) -> ExitCode {
 /// When built without the `webview` feature, prefer the server frontend if it is
 /// present; otherwise there is no way to display.
 #[cfg(not(feature = "webview"))]
-fn open_webview(spec: &RenderSpec, watch: &[PathBuf]) -> ExitCode {
+fn open_webview(source: &Arc<dyn DocSource>, watch: &[PathBuf]) -> ExitCode {
     #[cfg(feature = "serve")]
     {
         eprintln!("mdp: built without the `webview` feature; using the local server.");
-        open_serve(spec, watch, 0, true)
+        open_serve(source, watch, 0, true)
     }
     #[cfg(not(feature = "serve"))]
     {
-        let _ = (spec, watch);
+        let _ = (source, watch);
         eprintln!("mdp: built without a display frontend (webview or serve).");
         ExitCode::from(2)
     }
@@ -369,8 +391,8 @@ fn open_webview(spec: &RenderSpec, watch: &[PathBuf]) -> ExitCode {
 
 /// Dispatch to the local-server frontend when the feature is compiled in.
 #[cfg(feature = "serve")]
-fn open_serve(spec: &RenderSpec, watch: &[PathBuf], port: u16, open_browser: bool) -> ExitCode {
-    match mdp_serve::serve(spec.renderer(), watch, port, open_browser) {
+fn open_serve(source: &Arc<dyn DocSource>, watch: &[PathBuf], port: u16, open_browser: bool) -> ExitCode {
+    match mdp_serve::serve(source.clone(), watch, port, open_browser) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("mdp: {e}");
@@ -381,8 +403,8 @@ fn open_serve(spec: &RenderSpec, watch: &[PathBuf], port: u16, open_browser: boo
 
 /// Fallback when the binary is built without the `serve` feature.
 #[cfg(not(feature = "serve"))]
-fn open_serve(spec: &RenderSpec, _watch: &[PathBuf], _port: u16, _open_browser: bool) -> ExitCode {
-    let _ = spec;
+fn open_serve(source: &Arc<dyn DocSource>, _watch: &[PathBuf], _port: u16, _open_browser: bool) -> ExitCode {
+    let _ = source;
     eprintln!("mdp: built without the `serve` feature.");
     ExitCode::from(2)
 }

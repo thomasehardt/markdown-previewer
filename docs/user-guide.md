@@ -36,7 +36,8 @@ mdp notes.md
 A window opens with a brief loading state, then your rendered document. The
 preview is read-only: it is for reading and presenting, not editing.
 
-You can pass more than one file (the first is previewed today):
+Pass several files and switch between them with the file bar at the top of the
+preview:
 
 ```sh
 mdp intro.md setup.md

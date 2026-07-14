@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use mdp_core::watch::{self, WatchHandle};
-use mdp_core::RenderedDoc;
+use mdp_core::DocSource;
 use tiny_http::{Header, Response, Server};
 
 /// Loopback host. This never binds a public interface.
@@ -31,15 +31,12 @@ const RELOAD_PATH: &str = "/.mdp/reload";
 /// route re-renders on each request; a non-empty `watch_paths` enables the
 /// change flag that drives the reload banner. Runs the request loop and returns
 /// only on a fatal error; otherwise the process stops with Ctrl-C.
-pub fn serve<F>(
-    render: F,
+pub fn serve(
+    source: Arc<dyn DocSource>,
     watch_paths: &[PathBuf],
     port: u16,
     open_browser: bool,
-) -> Result<(), ServeError>
-where
-    F: Fn() -> RenderedDoc + Send + Sync + 'static,
-{
+) -> Result<(), ServeError> {
     let (server, url) = bind(port)?;
     let changed = Arc::new(AtomicBool::new(false));
     let _watch = start_watch(watch_paths, changed.clone());
@@ -56,7 +53,9 @@ where
     for request in server.incoming_requests() {
         let response = match route(request.url()) {
             Route::Document => {
-                let doc = render();
+                let index =
+                    parse_index(request.url(), "doc").min(source.count().saturating_sub(1));
+                let doc = source.render(index, &serve_href);
                 // Fresh content served: the reader is now up to date.
                 changed.store(false, Ordering::SeqCst);
                 html_response(200, "text/html; charset=utf-8", doc.html)
@@ -127,6 +126,27 @@ fn route(raw_path: &str) -> Route {
         RELOAD_PATH => Route::Reload,
         _ => Route::NotFound,
     }
+}
+
+/// The URL that switches the serve frontend to document `index`.
+fn serve_href(index: usize) -> String {
+    format!("/?doc={index}")
+}
+
+/// Parse `key=N` from a URL's query string; 0 if absent or unparsable.
+fn parse_index(url: &str, key: &str) -> usize {
+    let query = match url.split_once('?') {
+        Some((_, q)) => q,
+        None => return 0,
+    };
+    for pair in query.split('&') {
+        if let Some((k, v)) = pair.split_once('=') {
+            if k == key {
+                return v.parse().unwrap_or(0);
+            }
+        }
+    }
+    0
 }
 
 /// The reload endpoint's JSON body for a given changed state.
@@ -214,5 +234,13 @@ mod tests {
     #[test]
     fn start_watch_is_none_without_paths() {
         assert!(start_watch(&[], Arc::new(AtomicBool::new(false))).is_none());
+    }
+
+    #[test]
+    fn parse_index_reads_the_query() {
+        assert_eq!(parse_index("/?doc=2", "doc"), 2);
+        assert_eq!(parse_index("/", "doc"), 0);
+        assert_eq!(parse_index("/?doc=x", "doc"), 0);
+        assert_eq!(parse_index("/?a=1&doc=3", "doc"), 3);
     }
 }

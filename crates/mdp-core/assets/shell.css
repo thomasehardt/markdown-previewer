@@ -364,3 +364,35 @@ body.mdp-toc-open {
 .mdp-toc-l6 {
   padding-left: var(--space-5);
 }
+
+/* Multi-file switcher bar: a top strip of file tabs, shown for two or more
+ * files. Token-driven; the current file is highlighted. */
+.mdp-files {
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+.mdp-files ul {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+}
+.mdp-file a {
+  display: inline-block;
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-muted);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+.mdp-file a:hover {
+  color: var(--text-body);
+  background: var(--surface-card);
+}
+.mdp-file-current a {
+  color: var(--text-heading);
+  background: var(--surface-card);
+  font-weight: 650;
+}

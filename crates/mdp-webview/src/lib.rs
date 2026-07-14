@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use mdp_core::watch::{self, WatchHandle};
-use mdp_core::RenderedDoc;
+use mdp_core::{DocSource, RenderedDoc};
 
 use tao::{
     dpi::LogicalSize,
@@ -45,12 +45,9 @@ const RELOAD_PATH: &str = "/.mdp/reload";
 /// reload banner. On success this runs the OS event loop and does not return
 /// until the window closes; it returns `Err` only when the window or webview
 /// cannot be created, so the CLI can fall back to another frontend.
-pub fn show<F>(render: F, watch_paths: &[PathBuf]) -> Result<(), FrontendError>
-where
-    F: Fn() -> RenderedDoc + Send + Sync + 'static,
-{
+pub fn show(source: Arc<dyn DocSource>, watch_paths: &[PathBuf]) -> Result<(), FrontendError> {
     // One render up front for the window title and instant spinner.
-    let initial = render();
+    let initial = source.render(0, &doc_href);
     let spinner_html = spinner_page(&initial.title);
     let title = window_title(&initial.title);
 
@@ -64,16 +61,18 @@ where
         .build(&event_loop)
         .map_err(|e| FrontendError::Window(e.to_string()))?;
 
-    // The protocol handler is `Fn + 'static`; share the renderer and flag in.
-    let render = Arc::new(render);
-    let handler_render = render.clone();
+    // The protocol handler is `Fn + 'static`; share the doc source and flag in.
+    let handler_source = source.clone();
     let handler_changed = changed.clone();
     let builder = WebViewBuilder::new()
         .with_custom_protocol(SCHEME.to_string(), move |_id, request| {
+            let uri = request.uri();
+            let index = query_index(uri.query(), "n");
             respond(
-                request.uri().path(),
+                uri.path(),
+                index,
                 &spinner_html,
-                handler_render.as_ref(),
+                handler_source.as_ref(),
                 &handler_changed,
             )
         })
@@ -150,22 +149,41 @@ fn route(path: &str) -> WebRoute {
     }
 }
 
+/// The URL that switches the webview to document `index`.
+fn doc_href(index: usize) -> String {
+    format!("{SCHEME}://localhost{DOC_PATH}?n={index}")
+}
+
+/// Parse `key=N` from a query string; 0 if absent or unparsable.
+fn query_index(query: Option<&str>, key: &str) -> usize {
+    let Some(q) = query else {
+        return 0;
+    };
+    for pair in q.split('&') {
+        if let Some((k, v)) = pair.split_once('=') {
+            if k == key {
+                return v.parse().unwrap_or(0);
+            }
+        }
+    }
+    0
+}
+
 /// Answer one custom-protocol request. The document route re-renders and clears
 /// the change flag; the reload route reports the flag. Testable with a plain
 /// render closure and flag, no live webview needed.
-fn respond<F>(
+fn respond(
     path: &str,
+    index: usize,
     spinner_html: &str,
-    render: &F,
+    source: &dyn DocSource,
     changed: &AtomicBool,
-) -> Response<Cow<'static, [u8]>>
-where
-    F: Fn() -> RenderedDoc,
-{
+) -> Response<Cow<'static, [u8]>> {
     match route(path) {
         WebRoute::Spinner => html_response(spinner_html.to_owned().into_bytes()),
         WebRoute::Document => {
-            let doc = render();
+            let n = index.min(source.count().saturating_sub(1));
+            let doc = source.render(n, &doc_href);
             changed.store(false, Ordering::SeqCst);
             html_response(doc.html.into_bytes())
         }
@@ -452,15 +470,28 @@ pub fn export_pdf(doc: &RenderedDoc, out: &Path) -> Result<(), FrontendError> {
 mod tests {
     use super::*;
 
-    fn doc(html: &str) -> RenderedDoc {
-        RenderedDoc {
-            html: html.to_string(),
-            title: "T".to_string(),
+    struct Mock(&'static str);
+    impl DocSource for Mock {
+        fn count(&self) -> usize {
+            1
+        }
+        fn render(&self, _index: usize, _href: &dyn Fn(usize) -> String) -> RenderedDoc {
+            RenderedDoc {
+                html: self.0.to_string(),
+                title: "T".to_string(),
+            }
         }
     }
 
     fn body_string(resp: &Response<Cow<'static, [u8]>>) -> String {
         String::from_utf8(resp.body().to_vec()).unwrap()
+    }
+
+    #[test]
+    fn query_index_reads_n() {
+        assert_eq!(query_index(Some("n=2"), "n"), 2);
+        assert_eq!(query_index(None, "n"), 0);
+        assert_eq!(query_index(Some("n=bad"), "n"), 0);
     }
 
     #[test]
@@ -475,7 +506,7 @@ mod tests {
     #[test]
     fn root_serves_the_spinner() {
         let changed = AtomicBool::new(false);
-        let resp = respond("/", "SPINNER", &|| doc("DOC"), &changed);
+        let resp = respond("/", 0, "SPINNER", &Mock("DOC"), &changed);
         assert_eq!(resp.status(), 200);
         assert!(body_string(&resp).contains("SPINNER"));
     }
@@ -483,7 +514,7 @@ mod tests {
     #[test]
     fn doc_route_renders_fresh_and_clears_the_flag() {
         let changed = AtomicBool::new(true);
-        let resp = respond(DOC_PATH, "SPINNER", &|| doc("DOC-BODY"), &changed);
+        let resp = respond(DOC_PATH, 0, "SPINNER", &Mock("DOC-BODY"), &changed);
         assert_eq!(resp.status(), 200);
         assert!(body_string(&resp).contains("DOC-BODY"));
         // Serving fresh content clears the change flag.
@@ -493,7 +524,7 @@ mod tests {
     #[test]
     fn reload_route_reports_the_flag() {
         let changed = AtomicBool::new(true);
-        let resp = respond(RELOAD_PATH, "SPINNER", &|| doc("DOC"), &changed);
+        let resp = respond(RELOAD_PATH, 0, "SPINNER", &Mock("DOC"), &changed);
         assert!(body_string(&resp).contains("\"changed\":true"));
         // Reading the flag does not clear it (only serving the document does).
         assert!(changed.load(Ordering::SeqCst));
@@ -502,7 +533,7 @@ mod tests {
     #[test]
     fn unknown_path_is_a_404() {
         let changed = AtomicBool::new(false);
-        let resp = respond("/whatever", "SPINNER", &|| doc("DOC"), &changed);
+        let resp = respond("/whatever", 0, "SPINNER", &Mock("DOC"), &changed);
         assert_eq!(resp.status(), 404);
     }
 

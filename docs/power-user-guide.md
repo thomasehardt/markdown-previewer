@@ -121,6 +121,14 @@ so the base needs none. A custom `--theme` file still layers over whichever
 built-in theme is active, and the toolbar is interactive chrome, so it is
 omitted from exports.
 
+## Multiple files
+
+Pass several files (`mdp a.md b.md ...`, or `mdp serve a.md b.md`) and the
+preview shows a file switcher bar. Selecting a file renders it (by index over
+the frontend's URL: `?doc=N` for serve, `?n=N` over the webview's custom
+protocol); all passed files are watched, so a change to any of them offers a
+reload. Export still takes a single file.
+
 ## config.toml
 
 Persistent defaults live in `config.toml` in the platform config directory:
