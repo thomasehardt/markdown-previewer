@@ -24,3 +24,6 @@ objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-web-kit = "0.3"
 block2 = "0.6"
+# Standard macOS app menu so Cmd-Q / Cmd-W close the window (a bare tao window
+# has no menu to route those shortcuts to).
+muda = "0.15"

@@ -104,6 +104,25 @@ pub fn show(source: Arc<dyn DocSource>, watch_paths: &[PathBuf]) -> Result<(), F
             .map_err(|e| FrontendError::WebView(e.to_string()))?
     };
 
+    // macOS: install a standard app menu so Cmd+Q (quit) and Cmd+W (close)
+    // work. Without a menu, macOS has nothing to route those shortcuts to, so
+    // only the red close button would close the window. Kept alive for the
+    // process lifetime (the event loop below never returns).
+    #[cfg(target_os = "macos")]
+    let _menu = {
+        use muda::{Menu, PredefinedMenuItem, Submenu};
+        let menu = Menu::new();
+        let app = Submenu::new("mdp", true);
+        let _ = app.append(&PredefinedMenuItem::quit(None));
+        let window = Submenu::new("Window", true);
+        let _ = window.append(&PredefinedMenuItem::close_window(None));
+        let _ = window.append(&PredefinedMenuItem::minimize(None));
+        let _ = menu.append(&app);
+        let _ = menu.append(&window);
+        menu.init_for_nsapp();
+        menu
+    };
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         if let Event::WindowEvent {
