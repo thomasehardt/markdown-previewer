@@ -190,7 +190,10 @@ mod tests {
     fn theme_precedence_flag_beats_config() {
         let flag = Some(PathBuf::from("/flag.css"));
         let config = Some(PathBuf::from("/config.css"));
-        assert_eq!(resolve_theme(flag, config), Some(PathBuf::from("/flag.css")));
+        assert_eq!(
+            resolve_theme(flag, config),
+            Some(PathBuf::from("/flag.css"))
+        );
         assert_eq!(
             resolve_theme(None, Some(PathBuf::from("/config.css"))),
             Some(PathBuf::from("/config.css"))

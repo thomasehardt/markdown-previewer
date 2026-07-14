@@ -145,7 +145,10 @@ const DEFAULT_TITLE: &str = "Markdown Preview";
 pub fn render_document(markdown: &str, opts: &RenderOptions) -> RenderedDoc {
     let dirty = markdown_to_html(markdown);
     let clean = sanitize(&dirty);
-    let title = opts.title.clone().unwrap_or_else(|| DEFAULT_TITLE.to_string());
+    let title = opts
+        .title
+        .clone()
+        .unwrap_or_else(|| DEFAULT_TITLE.to_string());
     let html = assemble_page(&clean, markdown, &title, opts);
     RenderedDoc { html, title }
 }
@@ -618,9 +621,7 @@ fn syntect_theme_css() -> &'static str {
         let dark = css_for_theme_with_class_style(&hl.dark, style).unwrap_or_default();
         let dark_auto = prefix_selectors(&dark, ":root:not([data-color-scheme=\"light\"])");
         let dark_forced = prefix_selectors(&dark, ":root[data-color-scheme=\"dark\"]");
-        format!(
-            "{light}\n@media (prefers-color-scheme: dark) {{\n{dark_auto}}}\n{dark_forced}"
-        )
+        format!("{light}\n@media (prefers-color-scheme: dark) {{\n{dark_auto}}}\n{dark_forced}")
     })
 }
 
@@ -696,8 +697,7 @@ fn mermaid_assets() -> Option<&'static str> {
 /// Load an embedded text asset. Panics only if a compiled-in asset is missing,
 /// which is a build/packaging bug, not a runtime input error.
 fn load_asset(name: &str) -> Cow<'static, str> {
-    try_load_asset(name)
-        .unwrap_or_else(|| panic!("embedded asset missing: {name} (packaging bug)"))
+    try_load_asset(name).unwrap_or_else(|| panic!("embedded asset missing: {name} (packaging bug)"))
 }
 
 /// Load an embedded text asset if present, returning `None` when it is absent.
@@ -707,9 +707,9 @@ fn load_asset(name: &str) -> Cow<'static, str> {
 fn try_load_asset(name: &str) -> Option<Cow<'static, str>> {
     let file = Assets::get(name)?;
     Some(match file.data {
-        Cow::Borrowed(bytes) => Cow::Borrowed(
-            std::str::from_utf8(bytes).expect("embedded asset is not valid UTF-8"),
-        ),
+        Cow::Borrowed(bytes) => {
+            Cow::Borrowed(std::str::from_utf8(bytes).expect("embedded asset is not valid UTF-8"))
+        }
         Cow::Owned(bytes) => {
             Cow::Owned(String::from_utf8(bytes).expect("embedded asset is not valid UTF-8"))
         }
@@ -760,9 +760,7 @@ mod tests {
         // The opening <html> tag carries no scheme attribute in auto mode.
         // (The token CSS itself references data-color-scheme in its forced
         // selectors, so check the tag precisely rather than the whole page.)
-        assert!(doc
-            .html
-            .contains("<!doctype html>\n<html lang=\"en\">\n"));
+        assert!(doc.html.contains("<!doctype html>\n<html lang=\"en\">\n"));
     }
 
     #[test]
@@ -774,7 +772,9 @@ mod tests {
                 ..Default::default()
             },
         );
-        assert!(dark.html.contains("<html lang=\"en\" data-color-scheme=\"dark\">"));
+        assert!(dark
+            .html
+            .contains("<html lang=\"en\" data-color-scheme=\"dark\">"));
 
         let light = render_document(
             "hi",
@@ -845,8 +845,14 @@ mod tests {
             "<h1 id=\"a\">One</h1><p>x</p><h2 id=\"b\">Two <code>c</code></h2><hr>",
         );
         assert_eq!(hs.len(), 2);
-        assert_eq!((hs[0].level, hs[0].id.as_str(), hs[0].text.as_str()), (1, "a", "One"));
-        assert_eq!((hs[1].level, hs[1].id.as_str(), hs[1].text.as_str()), (2, "b", "Two c"));
+        assert_eq!(
+            (hs[0].level, hs[0].id.as_str(), hs[0].text.as_str()),
+            (1, "a", "One")
+        );
+        assert_eq!(
+            (hs[1].level, hs[1].id.as_str(), hs[1].text.as_str()),
+            (2, "b", "Two c")
+        );
     }
 
     #[test]
@@ -863,7 +869,10 @@ mod tests {
 
     #[test]
     fn no_toc_without_headings() {
-        let doc = render_document("Just a paragraph, no headings.\n", &RenderOptions::default());
+        let doc = render_document(
+            "Just a paragraph, no headings.\n",
+            &RenderOptions::default(),
+        );
         assert!(!doc.html.contains("<nav class=\"mdp-toc\""));
         assert!(!doc.html.contains("id=\"mdp-toc-toggle\""));
     }
@@ -932,15 +941,10 @@ mod tests {
         let key = "vendor/mermaid/mermaid.min.js";
         match Assets::get(key) {
             None => {
-                eprintln!(
-                    "skipping: {key} not vendored yet (run scripts/vendor-assets.sh)"
-                );
+                eprintln!("skipping: {key} not vendored yet (run scripts/vendor-assets.sh)");
             }
             Some(file) => {
-                assert!(
-                    !file.data.is_empty(),
-                    "vendored {key} should not be empty"
-                );
+                assert!(!file.data.is_empty(), "vendored {key} should not be empty");
                 // mermaid.min.js is a multi-MB prebuilt UMD bundle.
                 assert!(
                     file.data.len() > 1_000_000,
@@ -965,9 +969,7 @@ mod tests {
         let key = "vendor/katex/katex.inlined.css";
         match Assets::get(key) {
             None => {
-                eprintln!(
-                    "skipping: {key} not vendored yet (run scripts/vendor-assets.sh)"
-                );
+                eprintln!("skipping: {key} not vendored yet (run scripts/vendor-assets.sh)");
             }
             Some(_) => {
                 let css = load_asset(key);

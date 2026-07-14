@@ -50,10 +50,7 @@ fn strips_script_tag_and_its_payload() {
         !html.contains("<script>"),
         "a bare <script> tag survived sanitization"
     );
-    assert!(
-        !html.contains("xss-script"),
-        "script payload text survived"
-    );
+    assert!(!html.contains("xss-script"), "script payload text survived");
 }
 
 #[test]

@@ -53,20 +53,17 @@ pub fn serve(
     for request in server.incoming_requests() {
         let response = match route(request.url()) {
             Route::Document => {
-                let index =
-                    parse_index(request.url(), "doc").min(source.count().saturating_sub(1));
+                let index = parse_index(request.url(), "doc").min(source.count().saturating_sub(1));
                 let doc = source.render(index, &serve_href);
                 // Fresh content served: the reader is now up to date.
                 changed.store(false, Ordering::SeqCst);
                 html_response(200, "text/html; charset=utf-8", doc.html)
             }
-            Route::Reload => {
-                html_response(
-                    200,
-                    "application/json; charset=utf-8",
-                    reload_body(changed.load(Ordering::SeqCst)),
-                )
-            }
+            Route::Reload => html_response(
+                200,
+                "application/json; charset=utf-8",
+                reload_body(changed.load(Ordering::SeqCst)),
+            ),
             Route::NotFound => html_response(
                 404,
                 "text/plain; charset=utf-8",

@@ -174,7 +174,11 @@ fn main() -> ExitCode {
     }
 
     // Watching drives the reload banner; watch every previewed file.
-    let watch_paths: Vec<PathBuf> = if cli.no_watch { Vec::new() } else { files.clone() };
+    let watch_paths: Vec<PathBuf> = if cli.no_watch {
+        Vec::new()
+    } else {
+        files.clone()
+    };
 
     let source: Arc<dyn DocSource> = Arc::new(RenderSpec {
         files,
@@ -391,7 +395,12 @@ fn open_webview(source: &Arc<dyn DocSource>, watch: &[PathBuf]) -> ExitCode {
 
 /// Dispatch to the local-server frontend when the feature is compiled in.
 #[cfg(feature = "serve")]
-fn open_serve(source: &Arc<dyn DocSource>, watch: &[PathBuf], port: u16, open_browser: bool) -> ExitCode {
+fn open_serve(
+    source: &Arc<dyn DocSource>,
+    watch: &[PathBuf],
+    port: u16,
+    open_browser: bool,
+) -> ExitCode {
     match mdp_serve::serve(source.clone(), watch, port, open_browser) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -403,7 +412,12 @@ fn open_serve(source: &Arc<dyn DocSource>, watch: &[PathBuf], port: u16, open_br
 
 /// Fallback when the binary is built without the `serve` feature.
 #[cfg(not(feature = "serve"))]
-fn open_serve(source: &Arc<dyn DocSource>, _watch: &[PathBuf], _port: u16, _open_browser: bool) -> ExitCode {
+fn open_serve(
+    source: &Arc<dyn DocSource>,
+    _watch: &[PathBuf],
+    _port: u16,
+    _open_browser: bool,
+) -> ExitCode {
     let _ = source;
     eprintln!("mdp: built without the `serve` feature.");
     ExitCode::from(2)
@@ -457,8 +471,8 @@ mod tests {
             Cli::try_parse_from(["mdp", "--scheme", "dark", "--theme", "t.css", "x.md"]).unwrap();
         assert!(matches!(cli.scheme, Some(Scheme::Dark)));
         assert_eq!(cli.theme, Some(PathBuf::from("t.css")));
-        let cli = Cli::try_parse_from(["mdp", "--no-watch", "--view-source-default", "x.md"])
-            .unwrap();
+        let cli =
+            Cli::try_parse_from(["mdp", "--no-watch", "--view-source-default", "x.md"]).unwrap();
         assert!(cli.no_watch);
         assert!(cli.view_source_default);
     }
@@ -548,6 +562,9 @@ mod tests {
         let out = dir.path().join("out.rtf");
 
         let _ = run_export(&input, &out, ColorScheme::Auto, None, false);
-        assert!(!out.exists(), "no output should be written for an unsupported target");
+        assert!(
+            !out.exists(),
+            "no output should be written for an unsupported target"
+        );
     }
 }

@@ -81,16 +81,31 @@ fn cut(html: &str, open: &str, close: &str) -> String {
 /// Assert a fragment triggers no network fetch: no scheme, no protocol-relative
 /// reference, and none of the resource-loading vectors.
 fn assert_offline(fragment: &str, what: &str) {
-    assert!(!fragment.contains("://"), "{what} contains a scheme:// reference");
-    assert!(!fragment.contains("http"), "{what} contains an http reference");
+    assert!(
+        !fragment.contains("://"),
+        "{what} contains a scheme:// reference"
+    );
+    assert!(
+        !fragment.contains("http"),
+        "{what} contains an http reference"
+    );
     assert!(
         !fragment.contains("=\"//") && !fragment.contains("='//"),
         "{what} contains a protocol-relative reference"
     );
-    assert!(!fragment.to_lowercase().contains("<link"), "{what} has a <link> element");
-    assert!(!fragment.contains("url("), "{what} has a CSS url() reference");
+    assert!(
+        !fragment.to_lowercase().contains("<link"),
+        "{what} has a <link> element"
+    );
+    assert!(
+        !fragment.contains("url("),
+        "{what} has a CSS url() reference"
+    );
     for attr in ["src=", "srcset=", "poster="] {
-        assert!(!fragment.contains(attr), "{what} has a `{attr}` resource load");
+        assert!(
+            !fragment.contains(attr),
+            "{what} has a `{attr}` resource load"
+        );
     }
 }
 
@@ -130,7 +145,10 @@ fn strip_block_body(html: &str, start: &str, end: &str) -> String {
 /// font may be pulled from an external URL. Skips if KaTeX is not vendored yet.
 #[test]
 fn math_fonts_are_embedded_as_base64_not_external() {
-    let doc = render_document("Euler's identity: $e^{i\\pi} + 1 = 0$\n", &RenderOptions::default());
+    let doc = render_document(
+        "Euler's identity: $e^{i\\pi} + 1 = 0$\n",
+        &RenderOptions::default(),
+    );
     let html = doc.html;
     if !html.contains(r#"data-mdp="katex""#) {
         eprintln!("skipping: KaTeX assets not vendored (run scripts/vendor-assets.sh)");

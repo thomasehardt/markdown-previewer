@@ -139,12 +139,17 @@ mod tests {
     fn match_tracked_falls_back_to_raw_path() {
         // A nonexistent path cannot be canonicalized, so matching falls back to
         // the raw path comparison.
-        let tracked: HashSet<PathBuf> = [PathBuf::from("/no/such/file-xyz.md")].into_iter().collect();
+        let tracked: HashSet<PathBuf> = [PathBuf::from("/no/such/file-xyz.md")]
+            .into_iter()
+            .collect();
         assert_eq!(
             match_tracked(Path::new("/no/such/file-xyz.md"), &tracked),
             Some(PathBuf::from("/no/such/file-xyz.md"))
         );
-        assert_eq!(match_tracked(Path::new("/no/such/other.md"), &tracked), None);
+        assert_eq!(
+            match_tracked(Path::new("/no/such/other.md"), &tracked),
+            None
+        );
     }
 
     #[test]
