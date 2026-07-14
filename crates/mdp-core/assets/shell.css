@@ -26,7 +26,7 @@ body {
 }
 
 .mdp-document {
-  max-width: 46rem;
+  max-width: var(--reading-max);
   margin: 0 auto;
   padding: var(--space-5) var(--space-4) var(--space-5);
   background: var(--surface-card);
@@ -188,30 +188,52 @@ body {
   font-size: 0.75em;
 }
 
-/* View-source toggle (design section 4.2). A fixed button switches between the
- * rendered document and a read-only <pre> of the raw Markdown. Token-driven. */
-.mdp-view-toggle {
+/* Floating settings toolbar: theme / color-scheme / reading-width selects plus
+ * the view-source toggle (design 4.2/4.6). Part of the interactive chrome, so
+ * it is omitted from an export (show_chrome off). Token-driven throughout. */
+.mdp-toolbar {
   position: fixed;
   top: var(--space-3);
   right: var(--space-3);
   z-index: 10;
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
   padding: var(--space-1) var(--space-3);
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.18);
   font-family: var(--font-body);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  opacity: 0.72;
+  transition: opacity 0.15s ease;
+}
+.mdp-toolbar:hover,
+.mdp-toolbar:focus-within {
+  opacity: 1;
+}
+.mdp-ctl {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  color: var(--text-muted);
+}
+.mdp-toolbar select,
+.mdp-view-toggle {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
   color: var(--text-body);
   background: var(--surface-sunken);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  padding: 0.1rem 0.35rem;
   cursor: pointer;
-  opacity: 0.85;
-}
-.mdp-view-toggle:hover {
-  opacity: 1;
 }
 
 .mdp-source {
   display: none;
-  max-width: 46rem;
+  max-width: var(--reading-max);
   margin: 0 auto;
   padding: var(--space-5) var(--space-4);
   min-height: 100vh;

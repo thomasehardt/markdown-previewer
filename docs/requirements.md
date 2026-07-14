@@ -28,6 +28,7 @@ requirement to the implementation plan in `docs/design.md` section 9.
 | FR14 | Customizable branding via a CSS token override file (`--theme <path>`), with a config file able to set a standing default theme. | 2 | Done (`--theme` + `config.toml`, flag > config > default) |
 | FR15 | Color scheme control: auto (follow OS), light, dark. | 1 | Done (plumbed; `--scheme`) |
 | FR16 | Accept multiple input files. | 1 | Partial (accepted; first previewed) |
+| FR17 | In-preview switcher for theme, color scheme, and reading width, remembered across sessions. | 8 | Done (default/sepia/slate themes; localStorage) |
 
 ## Non-functional requirements
 

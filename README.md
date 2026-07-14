@@ -136,6 +136,9 @@ reference only semantic tokens (`--accent`, `--text-body`, `--text-heading`,
 theme: a neutral, elegant default using a permissive system font stack. A
 `--theme <path.css>` file layers over that default, so overriding a few tokens
 is a complete rebrand with no structural change. No company branding is bundled.
+The preview also has a small settings toolbar to switch among the bundled themes
+(default, sepia, slate), light/dark, and reading width live, remembering the
+choice.
 
 Persistent defaults live in an optional `config.toml` in the platform config
 directory (`~/.config/mdp/config.toml` on Linux and macOS, `%APPDATA%\mdp\` on

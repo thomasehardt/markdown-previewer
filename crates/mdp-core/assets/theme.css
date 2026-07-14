@@ -1,79 +1,97 @@
 /*
- * mdp built-in default theme: one neutral, elegant theme (design section 4.6).
+ * mdp built-in themes (design section 4.6). SEMANTIC TOKENS only: the layout
+ * CSS (shell.css) references these variables and never a raw color, so a user
+ * --theme override that redefines only the tokens it wants is a full rebrand.
+ * No company branding is bundled; fonts are a permissive system stack.
  *
- * This file sets SEMANTIC TOKENS only. The layout/prose CSS (shell.css) never
- * references a raw color or font name, only these variables, so a user --theme
- * override that redefines only the tokens it cares about is a complete rebrand
- * surface. No company branding is bundled; fonts are a permissive system stack.
- *
- * Light values live in :root. Dark values apply either automatically (when the
- * OS prefers dark and the scheme is not force-lit) or when the scheme is forced
- * dark via [data-color-scheme="dark"] on the root element.
+ * Each theme sets its color tokens with CSS light-dark(), so one block covers
+ * both schemes. The active scheme is chosen by the `color-scheme` property:
+ * `light dark` follows the OS; the switcher / --scheme flag forces one via
+ * [data-color-scheme]. The active theme is chosen by [data-mdp-theme] on the
+ * root; absent means the default theme. Reading width is [data-mdp-width].
  */
 
 :root {
   color-scheme: light dark;
 
-  /* Typography */
+  /* Typography (shared by all themes) */
   --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
     Arial, "Noto Sans", sans-serif;
   --font-heading: var(--font-body);
   --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code", Menlo,
     Consolas, "Liberation Mono", monospace;
 
-  /* Spacing scale */
+  /* Spacing scale + radii (shared) */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 1rem;
   --space-4: 1.5rem;
   --space-5: 2.5rem;
-
-  /* Radii */
   --radius-sm: 4px;
   --radius-md: 8px;
 
-  /* Color tokens (light) */
-  --surface-page: #fbfbfa;
-  --surface-card: #ffffff;
-  --surface-sunken: #f2f2f0;
-  --text-body: #2b2b31;
-  --text-heading: #16161a;
-  --text-muted: #6c6c78;
-  --accent: #3a6ea5;
-  --accent-contrast: #ffffff;
-  --border: #e4e4e2;
-  --code-bg: #f4f4f5;
-  --code-text: #24242a;
+  /* Reading width (layout switch: comfortable | wide | full) */
+  --reading-max: 46rem;
 }
 
-/* Automatic dark: OS prefers dark AND the scheme is not forced to light. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-color-scheme="light"]) {
-    --surface-page: #16161a;
-    --surface-card: #1e1e24;
-    --surface-sunken: #242430;
-    --text-body: #d7d7de;
-    --text-heading: #f4f4f7;
-    --text-muted: #9a9aa8;
-    --accent: #8ab4e0;
-    --accent-contrast: #16161a;
-    --border: #2f2f38;
-    --code-bg: #23232b;
-    --code-text: #d7d7de;
-  }
+/* Forced scheme (switcher, or --scheme / RenderOptions ColorScheme). */
+:root[data-color-scheme="light"] {
+  color-scheme: light;
 }
-
-/* Forced dark (--dark / RenderOptions ColorScheme::Dark). */
 :root[data-color-scheme="dark"] {
-  --surface-page: #16161a;
-  --surface-card: #1e1e24;
-  --surface-sunken: #242430;
-  --text-body: #d7d7de;
-  --text-heading: #f4f4f7;
-  --text-muted: #9a9aa8;
-  --accent: #8ab4e0;
-  --accent-contrast: #16161a;
-  --border: #2f2f38;
-  --code-bg: #23232b;
-  --code-text: #d7d7de;
+  color-scheme: dark;
+}
+
+/* Reading-width options. */
+:root[data-mdp-width="wide"] {
+  --reading-max: 60rem;
+}
+:root[data-mdp-width="full"] {
+  --reading-max: none;
+}
+
+/* THEME: default (also active when no theme is chosen). Cool neutral. */
+:root,
+:root[data-mdp-theme="default"] {
+  --surface-page: light-dark(#fbfbfa, #16161a);
+  --surface-card: light-dark(#ffffff, #1e1e24);
+  --surface-sunken: light-dark(#f2f2f0, #242430);
+  --text-body: light-dark(#2b2b31, #d7d7de);
+  --text-heading: light-dark(#16161a, #f4f4f7);
+  --text-muted: light-dark(#6c6c78, #9a9aa8);
+  --accent: light-dark(#3a6ea5, #8ab4e0);
+  --accent-contrast: light-dark(#ffffff, #16161a);
+  --border: light-dark(#e4e4e2, #2f2f38);
+  --code-bg: light-dark(#f4f4f5, #23232b);
+  --code-text: light-dark(#24242a, #d7d7de);
+}
+
+/* THEME: sepia. Warm, paper-like. */
+:root[data-mdp-theme="sepia"] {
+  --surface-page: light-dark(#f4ecd8, #26221b);
+  --surface-card: light-dark(#fbf5e6, #2f2a21);
+  --surface-sunken: light-dark(#ece2c9, #38322a);
+  --text-body: light-dark(#433a2b, #e6dcc6);
+  --text-heading: light-dark(#2a2419, #f4ecd8);
+  --text-muted: light-dark(#7a6f57, #b0a487);
+  --accent: light-dark(#9a6b3f, #d8a56a);
+  --accent-contrast: light-dark(#fbf5e6, #26221b);
+  --border: light-dark(#ddd0b0, #43392a);
+  --code-bg: light-dark(#efe6cf, #2f2a21);
+  --code-text: light-dark(#433a2b, #e6dcc6);
+}
+
+/* THEME: slate. Cool, higher contrast. */
+:root[data-mdp-theme="slate"] {
+  --surface-page: light-dark(#eef1f5, #0f1620);
+  --surface-card: light-dark(#ffffff, #17202c);
+  --surface-sunken: light-dark(#e0e6ee, #1f2a38);
+  --text-body: light-dark(#1f2833, #d3dbe6);
+  --text-heading: light-dark(#0c1320, #f2f6fb);
+  --text-muted: light-dark(#5a6675, #93a1b3);
+  --accent: light-dark(#2563b0, #6fb0f0);
+  --accent-contrast: light-dark(#ffffff, #0f1620);
+  --border: light-dark(#cfd6e0, #263341);
+  --code-bg: light-dark(#e6ebf2, #17202c);
+  --code-text: light-dark(#1f2833, #d3dbe6);
 }

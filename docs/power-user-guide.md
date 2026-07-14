@@ -103,6 +103,22 @@ identical with or without it (there is a test that guarantees this). Define both
 light and dark in one theme via `prefers-color-scheme`, or scope overrides under
 `:root[data-color-scheme="dark"]` to match the `--scheme` flag.
 
+## Switching in the preview
+
+The preview's settings toolbar (top-right) switches three things live, and
+remembers each in `localStorage` so it persists across reloads and files:
+
+- **Theme** - the bundled `default`, `sepia`, or `slate` (each a full token set
+  covering light and dark via CSS `light-dark()`).
+- **Scheme** - `auto` (follow the OS), `light`, or `dark`.
+- **Width** - `comfortable`, `wide`, or `full`.
+
+Each maps to a root attribute the theme CSS keys off (`data-mdp-theme`,
+`data-color-scheme`, `data-mdp-width`); the attribute is dropped at its default,
+so the base needs none. A custom `--theme` file still layers over whichever
+built-in theme is active, and the toolbar is interactive chrome, so it is
+omitted from exports.
+
 ## config.toml
 
 Persistent defaults live in `config.toml` in the platform config directory:

@@ -134,9 +134,51 @@
     setInterval(poll, 1000);
   }
 
+  /* Live theme / color-scheme / reading-width switching (design 4.6). Each
+   * control maps to a root data-attribute the theme CSS keys off; the choice is
+   * remembered in localStorage so it survives reloads and moving between files.
+   * The attribute is removed when the value equals its default, so the base
+   * (default theme, auto scheme, comfortable width) needs no attribute. */
+  function setupSettings() {
+    var root = document.documentElement;
+    function apply(attr, value, attrDefault) {
+      if (value === attrDefault) {
+        root.removeAttribute(attr);
+      } else {
+        root.setAttribute(attr, value);
+      }
+    }
+    function control(id, key, attr, attrDefault, initial) {
+      var el = document.getElementById(id);
+      if (!el) {
+        return;
+      }
+      var saved = null;
+      try {
+        saved = localStorage.getItem(key);
+      } catch (e) {}
+      var value = saved || initial;
+      el.value = value;
+      apply(attr, value, attrDefault);
+      el.addEventListener("change", function () {
+        apply(attr, el.value, attrDefault);
+        try {
+          localStorage.setItem(key, el.value);
+        } catch (e) {}
+      });
+    }
+    control("mdp-theme", "mdp-theme", "data-mdp-theme", "default", "default");
+    control("mdp-width", "mdp-width", "data-mdp-width", "comfortable", "comfortable");
+    // Scheme's initial value is whatever the server stamped (from --scheme), or
+    // auto; the attribute-default that clears it is always "auto".
+    var initialScheme = root.getAttribute("data-color-scheme") || "auto";
+    control("mdp-scheme", "mdp-scheme", "data-color-scheme", "auto", initialScheme);
+  }
+
   function ready() {
     setupViewToggle();
     setupReload();
+    setupSettings();
     renderMath();
     renderMermaid()
       .catch(function () {})

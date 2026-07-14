@@ -404,7 +404,13 @@ fn assemble_page(body: &str, source_md: &str, title: &str, opts: &RenderOptions)
     // Interactive chrome (view-source toggle + reload banner). Omitted when
     // show_chrome is off, e.g. PDF export captures just the document.
     let chrome = if opts.show_chrome {
-        "<div id=\"mdp-reload-banner\" class=\"mdp-reload-banner\" role=\"status\" hidden>This file changed on disk. <button type=\"button\" id=\"mdp-reload-accept\">Reload</button> <button type=\"button\" id=\"mdp-reload-dismiss\">Dismiss</button></div>\n<button type=\"button\" id=\"mdp-view-toggle\" class=\"mdp-view-toggle\" aria-pressed=\"false\">View source</button>\n"
+        "<div id=\"mdp-reload-banner\" class=\"mdp-reload-banner\" role=\"status\" hidden>This file changed on disk. <button type=\"button\" id=\"mdp-reload-accept\">Reload</button> <button type=\"button\" id=\"mdp-reload-dismiss\">Dismiss</button></div>\n\
+<div class=\"mdp-toolbar\" role=\"toolbar\" aria-label=\"Preview settings\">\
+<label class=\"mdp-ctl\">Theme <select id=\"mdp-theme\"><option value=\"default\">Default</option><option value=\"sepia\">Sepia</option><option value=\"slate\">Slate</option></select></label>\
+<label class=\"mdp-ctl\">Scheme <select id=\"mdp-scheme\"><option value=\"auto\">Auto</option><option value=\"light\">Light</option><option value=\"dark\">Dark</option></select></label>\
+<label class=\"mdp-ctl\">Width <select id=\"mdp-width\"><option value=\"comfortable\">Comfortable</option><option value=\"wide\">Wide</option><option value=\"full\">Full</option></select></label>\
+<button type=\"button\" id=\"mdp-view-toggle\" class=\"mdp-view-toggle\" aria-pressed=\"false\">View source</button>\
+</div>\n"
     } else {
         ""
     };

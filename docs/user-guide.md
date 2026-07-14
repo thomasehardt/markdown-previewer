@@ -64,6 +64,10 @@ mdp --theme my-theme.css notes.md
 To make a theme your standing default so you do not pass the flag every time,
 set it in `config.toml` (see the power-user guide).
 
+The preview also has a small settings toolbar in the top-right corner: switch
+the built-in theme (default, sepia, slate), light/dark, and reading width on the
+fly. Your choice is remembered the next time you open a file.
+
 ## Viewing the raw Markdown
 
 Click **View source** (top-right), or press `s`, to switch between the rendered
