@@ -48,7 +48,17 @@ impl std::error::Error for PdfError {}
 /// last page runs past the content into blank space, so every page is the same
 /// size and prints one-to-one). A source no taller than one page is returned as
 /// a single page kept snug to its content, not padded to a full empty page.
-pub fn paginate(single_page_pdf: &[u8], page_height_pt: f32) -> Result<Vec<u8>, PdfError> {
+///
+/// `background`, if given as `[r, g, b]` components in 0.0..=1.0, is painted
+/// behind every page. This matters on the last page, whose window runs past the
+/// content into space the capture never painted: without a fill that shows as
+/// white, which clashes with a dark surface. Passing the rendered surface color
+/// makes the trailing space match the document.
+pub fn paginate(
+    single_page_pdf: &[u8],
+    page_height_pt: f32,
+    background: Option<[f32; 3]>,
+) -> Result<Vec<u8>, PdfError> {
     if !page_height_pt.is_finite() || page_height_pt <= 0.0 {
         return Err(PdfError::Structure(
             "page height must be a positive number of points".to_string(),
@@ -72,6 +82,10 @@ pub fn paginate(single_page_pdf: &[u8], page_height_pt: f32) -> Result<Vec<u8>, 
 
     let [x0, y0, x1, y1] = media_box(&doc, &page_dict, page_id)?;
     let height = y1 - y0;
+
+    // The page's existing content, reused by every windowed page. A background
+    // fill is prepended before it (drawn underneath) when a color is given.
+    let original_contents = page_dict.get(b"Contents").ok().cloned();
 
     let pages_id = doc
         .catalog()
@@ -114,6 +128,17 @@ pub fn paginate(single_page_pdf: &[u8], page_height_pt: f32) -> Result<Vec<u8>, 
         d.remove(b"CropBox");
         d.remove(b"Annots");
         d.set(b"Parent".to_vec(), Object::Reference(pages_id));
+
+        // Paint the surface color under the page, then the original content.
+        if let (Some(rgb), Some(contents)) = (background, original_contents.clone()) {
+            let fill_id = doc.add_object(background_fill([x0, lower, x1, upper], rgb));
+            let mut streams = vec![Object::Reference(fill_id)];
+            match contents {
+                Object::Array(items) => streams.extend(items),
+                single => streams.push(single),
+            }
+            d.set(b"Contents".to_vec(), Object::Array(streams));
+        }
 
         let id = doc.add_object(Object::Dictionary(d));
         kids.push(Object::Reference(id));
@@ -197,6 +222,36 @@ fn parse_rect(obj: &Object) -> Result<[f32; 4], PdfError> {
     Ok(r)
 }
 
+/// A content stream that fills the rectangle `[x0, y0, x1, y1]` with `rgb`
+/// (components 0.0..=1.0). Wrapped in `q`/`Q` so it leaves the graphics state
+/// untouched for the content drawn after it.
+fn background_fill([x0, y0, x1, y1]: [f32; 4], [r, g, b]: [f32; 3]) -> lopdf::Stream {
+    let (w, h) = (x1 - x0, y1 - y0);
+    let ops = format!("q {r} {g} {b} rg {x0} {y0} {w} {h} re f Q");
+    lopdf::Stream::new(lopdf::Dictionary::new(), ops.into_bytes())
+}
+
+/// Parse a CSS `rgb(...)`/`rgba(...)` color (as `getComputedStyle` reports it)
+/// into `[r, g, b]` components in 0.0..=1.0. Accepts comma- or space-separated
+/// values and ignores any alpha. Returns `None` for anything else (e.g. a named
+/// color or `transparent`), so the caller simply skips the background fill.
+pub fn parse_css_color(s: &str) -> Option<[f32; 3]> {
+    let s = s.trim();
+    let inner = s
+        .strip_prefix("rgba(")
+        .or_else(|| s.strip_prefix("rgb("))?
+        .strip_suffix(')')?;
+    let parts: Vec<f32> = inner
+        .split(|c: char| c == ',' || c == '/' || c.is_whitespace())
+        .filter(|p| !p.is_empty())
+        .filter_map(|p| p.parse::<f32>().ok())
+        .collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    Some([parts[0] / 255.0, parts[1] / 255.0, parts[2] / 255.0])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,7 +313,7 @@ mod tests {
     #[test]
     fn splits_tall_page_into_letter_bands() {
         let src = tall_page(612.0, 2000.0);
-        let out = paginate(&src, 792.0).unwrap();
+        let out = paginate(&src, 792.0, None).unwrap();
         let boxes = media_boxes(&out);
         // ceil(2000 / 792) = 3 pages.
         assert_eq!(boxes.len(), 3);
@@ -278,7 +333,7 @@ mod tests {
     #[test]
     fn short_page_stays_single() {
         let src = tall_page(612.0, 500.0);
-        let out = paginate(&src, 792.0).unwrap();
+        let out = paginate(&src, 792.0, None).unwrap();
         let boxes = media_boxes(&out);
         assert_eq!(boxes.len(), 1);
         assert_eq!(boxes[0], [0.0, 0.0, 612.0, 500.0]);
@@ -287,7 +342,7 @@ mod tests {
     #[test]
     fn exact_multiple_has_no_trailing_blank_page() {
         let src = tall_page(612.0, 1584.0); // exactly 2 * 792
-        let out = paginate(&src, 792.0).unwrap();
+        let out = paginate(&src, 792.0, None).unwrap();
         assert_eq!(media_boxes(&out).len(), 2);
     }
 
@@ -296,7 +351,7 @@ mod tests {
         // Windowing must not duplicate the (potentially large) content; every
         // page should reference the same Contents object.
         let src = tall_page(612.0, 2000.0);
-        let out = paginate(&src, 792.0).unwrap();
+        let out = paginate(&src, 792.0, None).unwrap();
         let doc = Document::load_mem(&out).unwrap();
         let contents: Vec<_> = doc
             .get_pages()
@@ -317,7 +372,7 @@ mod tests {
     #[test]
     fn rejects_non_pdf_input() {
         assert!(matches!(
-            paginate(b"not a pdf at all", 792.0),
+            paginate(b"not a pdf at all", 792.0, None),
             Err(PdfError::Parse(_))
         ));
     }
@@ -325,10 +380,16 @@ mod tests {
     #[test]
     fn rejects_non_positive_page_height() {
         let src = tall_page(612.0, 2000.0);
-        assert!(matches!(paginate(&src, 0.0), Err(PdfError::Structure(_))));
-        assert!(matches!(paginate(&src, -10.0), Err(PdfError::Structure(_))));
         assert!(matches!(
-            paginate(&src, f32::NAN),
+            paginate(&src, 0.0, None),
+            Err(PdfError::Structure(_))
+        ));
+        assert!(matches!(
+            paginate(&src, -10.0, None),
+            Err(PdfError::Structure(_))
+        ));
+        assert!(matches!(
+            paginate(&src, f32::NAN, None),
             Err(PdfError::Structure(_))
         ));
     }
@@ -365,7 +426,7 @@ mod tests {
     #[test]
     fn paginates_page_with_inherited_media_box() {
         let src = page_with_inherited_media_box(612.0, 2000.0);
-        let out = paginate(&src, 792.0).unwrap();
+        let out = paginate(&src, 792.0, None).unwrap();
         // The tall box was found via the parent chain, then split into 3 pages.
         assert_eq!(media_boxes(&out).len(), 3);
     }
@@ -404,5 +465,42 @@ mod tests {
             .to_string()
             .contains("structure"));
         assert!(PdfError::Write("boom".into()).to_string().contains("write"));
+    }
+
+    #[test]
+    fn background_prepends_fill_and_keeps_shared_content() {
+        let src = tall_page(612.0, 2000.0);
+        let out = paginate(&src, 792.0, Some([0.1, 0.1, 0.12])).unwrap();
+        let doc = Document::load_mem(&out).unwrap();
+        let mut originals = Vec::new();
+        for &id in doc.get_pages().values() {
+            let contents = doc
+                .get_dictionary(id)
+                .unwrap()
+                .get(b"Contents")
+                .unwrap()
+                .as_array()
+                .unwrap();
+            // Each page is [fill, original]: a per-page fill then the shared body.
+            assert_eq!(contents.len(), 2);
+            originals.push(contents[1].as_reference().unwrap());
+        }
+        assert_eq!(originals.len(), 3);
+        // The original content object is still shared, not duplicated per page.
+        assert!(originals.iter().all(|&r| r == originals[0]));
+    }
+
+    #[test]
+    fn parses_css_colors_and_rejects_others() {
+        assert_eq!(parse_css_color("rgb(255, 0, 0)"), Some([1.0, 0.0, 0.0]));
+        assert_eq!(parse_css_color("rgba(0, 0, 0, 1)"), Some([0.0, 0.0, 0.0]));
+        // Space-separated (CSS Color 4 serialization) with alpha via slash.
+        assert_eq!(
+            parse_css_color("rgb(51 51 51 / 0.5)"),
+            Some([51.0 / 255.0, 51.0 / 255.0, 51.0 / 255.0])
+        );
+        assert!(parse_css_color("transparent").is_none());
+        assert!(parse_css_color("#ffffff").is_none());
+        assert!(parse_css_color("rgb(1, 2)").is_none());
     }
 }

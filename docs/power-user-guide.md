@@ -20,6 +20,7 @@ Global options (apply to every path):
 |---|---|
 | `--theme <PATH>` | Layer a theme CSS file over the built-in default. |
 | `--scheme <auto\|light\|dark>` | Color scheme. Unset follows `config.toml`, then the OS. |
+| `--page-size <letter\|a4>` | Paper size for PDF export. Unset follows `config.toml`, then `letter`. No effect on HTML export or the preview. |
 | `--no-watch` | Disable file watching and the reload banner. |
 | `--view-source-default` | Open showing the read-only raw source instead of the rendered view (toggle in-page with the button or `s`). |
 
@@ -67,19 +68,24 @@ not yet pre-frozen to static SVG (that would need a browser engine at export
 time).
 
 Exporting to a `.pdf` path captures a high-fidelity vector PDF on macOS: it
-renders the document in a webview (laid out at US Letter width), waits for the
+renders the document in a webview (laid out at the page width), waits for the
 render-complete signal (so Mermaid and KaTeX, including web fonts, have
 finished), then captures silently via `WKWebView.createPDF`. That capture is one
-tall page, which `mdp` then paginates into US Letter pages before writing.
+tall page, which `mdp` then paginates into page-height pages before writing.
 Text stays selectable and diagrams stay vector-sharp (nothing is re-rasterized).
 Long code lines and wide tables are wrapped for export so they never clip at the
-page edge. A window appears briefly during capture. Windows and Linux each need
-their own native path and are not yet implemented.
+page edge. The rendered surface color is painted behind each page, so a dark-mode
+export has no white margins. A window appears briefly during capture. Windows and
+Linux each need their own native path and are not yet implemented.
 
-Two cosmetic notes: in a dark color scheme the blank space below the content on
-the last page shows as white (the capture is only as tall as the content), and
-page breaks fall at fixed heights rather than at semantic boundaries. Export in a
-light scheme (or the default) for the cleanest printed result.
+Choose the paper size with `--page-size letter` (default) or `--page-size a4`,
+or set `page_size` in `config.toml`.
+
+You can also export from the preview window: the toolbar has an **Export PDF**
+button with a page-size picker (shown only in the native app, not in a browser).
+It prompts for a save location and writes the currently-shown file, matching the
+active color scheme. The one remaining rough edge is page breaks, which fall at
+fixed heights rather than at semantic boundaries.
 
 ## Authoring a theme
 
@@ -151,6 +157,7 @@ Persistent defaults live in `config.toml` in the platform config directory:
 # paths are used as-is (no shell ~ expansion); prefer an absolute path
 theme = "/home/you/.config/mdp/themes/night.css"
 scheme = "dark"
+page_size = "a4"   # PDF export paper size: letter (default) or a4
 ```
 
 Resolution precedence is **CLI flag > config.toml > built-in default**. Unknown

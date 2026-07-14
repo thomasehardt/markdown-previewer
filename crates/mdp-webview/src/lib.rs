@@ -12,7 +12,7 @@
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use mdp_core::watch::{self, WatchHandle};
@@ -21,7 +21,7 @@ use mdp_core::{DocSource, RenderedDoc};
 use tao::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
+    event_loop::{ControlFlow, EventLoopBuilder},
     window::WindowBuilder,
 };
 use wry::{
@@ -38,14 +38,27 @@ const DOC_PATH: &str = "/doc";
 /// The reload-signal endpoint the shell polls (design section 4.3).
 const RELOAD_PATH: &str = "/.mdp/reload";
 
+/// An in-app request the webview shell routes to the event loop over IPC.
+enum ShowEvent {
+    /// The user clicked "Export PDF" in the toolbar.
+    Export(ExportRequest),
+}
+
 /// Open a native window and display `render`'s output read-only.
 ///
 /// Re-renders on each document request (so a reload after a change shows fresh
 /// content) and, when `watch_paths` is non-empty, runs a watcher that drives the
-/// reload banner. On success this runs the OS event loop and does not return
-/// until the window closes; it returns `Err` only when the window or webview
-/// cannot be created, so the CLI can fall back to another frontend.
-pub fn show(source: Arc<dyn DocSource>, watch_paths: &[PathBuf]) -> Result<(), FrontendError> {
+/// reload banner. `files` are the source paths (in switcher order) and `theme` is
+/// the CSS theme in effect, both used by the in-app Export action to shell out to
+/// `mdp export`. On success this runs the OS event loop and does not return until
+/// the window closes; it returns `Err` only when the window or webview cannot be
+/// created, so the CLI can fall back to another frontend.
+pub fn show(
+    source: Arc<dyn DocSource>,
+    watch_paths: &[PathBuf],
+    files: &[PathBuf],
+    theme: Option<&Path>,
+) -> Result<(), FrontendError> {
     // One render up front for the window title and instant spinner.
     let initial = source.render(0, &doc_href);
     let spinner_html = spinner_page(&initial.title);
@@ -54,7 +67,15 @@ pub fn show(source: Arc<dyn DocSource>, watch_paths: &[PathBuf]) -> Result<(), F
     let changed = Arc::new(AtomicBool::new(false));
     let _watch = start_watch(watch_paths, changed.clone());
 
-    let event_loop = EventLoop::new();
+    // Owned copies for the `'static` event-loop closures, plus a shared record of
+    // which document is currently shown (for the Export action).
+    let files: Vec<PathBuf> = files.to_vec();
+    let theme: Option<PathBuf> = theme.map(Path::to_path_buf);
+    let current_index = Arc::new(AtomicUsize::new(0));
+
+    let event_loop = EventLoopBuilder::<ShowEvent>::with_user_event().build();
+    let proxy = event_loop.create_proxy();
+
     let window = WindowBuilder::new()
         .with_title(title)
         .with_inner_size(LogicalSize::new(1000.0, 800.0))
@@ -62,12 +83,18 @@ pub fn show(source: Arc<dyn DocSource>, watch_paths: &[PathBuf]) -> Result<(), F
         .map_err(|e| FrontendError::Window(e.to_string()))?;
 
     // The protocol handler is `Fn + 'static`; share the doc source and flag in.
+    // It also records the shown document index so Export knows which file to use.
     let handler_source = source.clone();
     let handler_changed = changed.clone();
+    let handler_index = current_index.clone();
+    let ipc_proxy = proxy.clone();
     let builder = WebViewBuilder::new()
         .with_custom_protocol(SCHEME.to_string(), move |_id, request| {
             let uri = request.uri();
             let index = query_index(uri.query(), "n");
+            if uri.path() == DOC_PATH {
+                handler_index.store(index, Ordering::SeqCst);
+            }
             respond(
                 uri.path(),
                 index,
@@ -75,6 +102,13 @@ pub fn show(source: Arc<dyn DocSource>, watch_paths: &[PathBuf]) -> Result<(), F
                 handler_source.as_ref(),
                 &handler_changed,
             )
+        })
+        .with_ipc_handler(move |req: wry::http::Request<String>| {
+            // The shell posts "mdp:export <size> <scheme>" on an Export click;
+            // other IPC (e.g. render-complete) is ignored here.
+            if let Some(export) = parse_export_request(req.body().as_str()) {
+                let _ = ipc_proxy.send_event(ShowEvent::Export(export));
+            }
         })
         .with_url(format!("{SCHEME}://localhost/"));
 
@@ -125,14 +159,115 @@ pub fn show(source: Arc<dyn DocSource>, watch_paths: &[PathBuf]) -> Result<(), F
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
-        if let Event::WindowEvent {
-            event: WindowEvent::CloseRequested,
-            ..
-        } = event
-        {
-            *control_flow = ControlFlow::Exit;
+        match event {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {
+                *control_flow = ControlFlow::Exit;
+            }
+            Event::UserEvent(ShowEvent::Export(req)) => {
+                handle_export(
+                    &files,
+                    theme.as_deref(),
+                    current_index.load(Ordering::SeqCst),
+                    &req,
+                );
+            }
+            _ => {}
         }
     });
+}
+
+/// A parsed in-app export request from the shell's "mdp:export <size> <scheme>"
+/// IPC message. Values are validated here so only known tokens ever reach the
+/// `mdp export` subprocess.
+#[derive(Debug, PartialEq, Eq)]
+struct ExportRequest {
+    page_size: String,
+    scheme: String,
+}
+
+/// Parse "mdp:export <size> <scheme>". Returns `None` for any other message or
+/// an unknown page size; an unknown/absent scheme falls back to "auto".
+fn parse_export_request(msg: &str) -> Option<ExportRequest> {
+    let rest = msg.strip_prefix("mdp:export")?;
+    let mut fields = rest.split_whitespace();
+    let page_size = fields.next()?;
+    if !matches!(page_size, "letter" | "a4") {
+        return None;
+    }
+    let scheme = match fields.next() {
+        Some("light") => "light",
+        Some("dark") => "dark",
+        _ => "auto",
+    };
+    Some(ExportRequest {
+        page_size: page_size.to_string(),
+        scheme: scheme.to_string(),
+    })
+}
+
+/// Build the `mdp export` argument list for `file` -> `out` with the request's
+/// page size and scheme, threading the active theme through when set.
+fn export_args(
+    file: &Path,
+    out: &Path,
+    req: &ExportRequest,
+    theme: Option<&Path>,
+) -> Vec<std::ffi::OsString> {
+    use std::ffi::OsString;
+    let mut args: Vec<OsString> = vec![
+        OsString::from("export"),
+        file.as_os_str().to_os_string(),
+        OsString::from("--to"),
+        out.as_os_str().to_os_string(),
+        OsString::from("--page-size"),
+        OsString::from(&req.page_size),
+        OsString::from("--scheme"),
+        OsString::from(&req.scheme),
+    ];
+    if let Some(theme) = theme {
+        args.push(OsString::from("--theme"));
+        args.push(theme.as_os_str().to_os_string());
+    }
+    args
+}
+
+/// Run an in-app export: prompt for a save location, then shell out to
+/// `mdp export` (a fresh one-shot, which avoids nesting event loops). macOS only,
+/// matching where PDF export runs.
+#[cfg(target_os = "macos")]
+fn handle_export(files: &[PathBuf], theme: Option<&Path>, index: usize, req: &ExportRequest) {
+    let Some(file) = files.get(index).or_else(|| files.first()) else {
+        eprintln!("mdp: nothing to export");
+        return;
+    };
+    let default_name = file
+        .file_stem()
+        .map(|stem| format!("{}.pdf", stem.to_string_lossy()))
+        .unwrap_or_else(|| "export.pdf".to_string());
+    let Some(out) = rfd::FileDialog::new()
+        .set_file_name(default_name)
+        .add_filter("PDF", &["pdf"])
+        .save_file()
+    else {
+        return; // The user cancelled the save dialog.
+    };
+    let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("mdp"));
+    let args = export_args(file, &out, req, theme);
+    match std::process::Command::new(exe).args(&args).status() {
+        Ok(status) if status.success() => eprintln!("mdp: exported {}", out.display()),
+        Ok(status) => eprintln!("mdp: export failed ({status})"),
+        Err(e) => eprintln!("mdp: could not run export: {e}"),
+    }
+}
+
+/// In-app export is currently macOS-only (PDF export is). Elsewhere the toolbar
+/// button still appears under a native host, but reports the limitation.
+#[cfg(not(target_os = "macos"))]
+fn handle_export(_files: &[PathBuf], _theme: Option<&Path>, _index: usize, _req: &ExportRequest) {
+    eprintln!("mdp: in-app PDF export is currently implemented only on macOS");
 }
 
 /// Start watching `paths` (if any), flipping `changed` on each debounced change.
@@ -361,11 +496,17 @@ impl std::error::Error for FrontendError {}
 /// timed fallback captures even if the signal never arrives.
 ///
 /// `createPDF` yields one page as tall as the whole document. The webview is laid
-/// out at US Letter WIDTH so the capture is Letter-wide, then `mdp_core::pdf`
-/// paginates that tall page into Letter-height pages before writing. The window
+/// out at `page_width_pt` (PDF points) so the capture is that wide, then
+/// `mdp_core::pdf` paginates the tall page into `page_height_pt`-tall pages before
+/// writing (e.g. 612 x 792 for US Letter, 595.28 x 841.89 for A4). The window
 /// briefly appears during capture. Windows/Linux native PDF are not yet done.
 #[cfg(target_os = "macos")]
-pub fn export_pdf(doc: &RenderedDoc, out: &Path) -> Result<(), FrontendError> {
+pub fn export_pdf(
+    doc: &RenderedDoc,
+    out: &Path,
+    page_width_pt: f64,
+    page_height_pt: f32,
+) -> Result<(), FrontendError> {
     use std::cell::RefCell;
     use std::rc::Rc;
 
@@ -379,14 +520,10 @@ pub fn export_pdf(doc: &RenderedDoc, out: &Path) -> Result<(), FrontendError> {
     use objc2_foundation::{MainThreadMarker, NSData, NSError};
     use objc2_web_kit::WKPDFConfiguration;
 
-    // US Letter portrait, in PDF points (72pt = 1in). Laying the capture out at
-    // this width makes createPDF produce a Letter-wide tall page, which pagination
-    // then slices into Letter-tall pages.
-    const LETTER_WIDTH_PT: f64 = 612.0;
-    const LETTER_HEIGHT_PT: f32 = 792.0;
-
     enum PdfEvent {
-        Capture,
+        // Carries the rendered surface color (if the shell reported it) so
+        // pagination can paint page trailing space to match.
+        Capture(Option<[f32; 3]>),
         Done(Result<usize, String>),
     }
 
@@ -398,7 +535,10 @@ pub fn export_pdf(doc: &RenderedDoc, out: &Path) -> Result<(), FrontendError> {
 
     let window = WindowBuilder::new()
         .with_title("mdp export")
-        .with_inner_size(tao::dpi::LogicalSize::new(LETTER_WIDTH_PT, 792.0))
+        .with_inner_size(tao::dpi::LogicalSize::new(
+            page_width_pt,
+            page_height_pt as f64,
+        ))
         .build(&event_loop)
         .map_err(|e| FrontendError::Window(e.to_string()))?;
 
@@ -407,17 +547,20 @@ pub fn export_pdf(doc: &RenderedDoc, out: &Path) -> Result<(), FrontendError> {
     let webview = WebViewBuilder::new()
         .with_html(html)
         .with_ipc_handler(move |req: wry::http::Request<String>| {
-            if req.body().as_str() == "render-complete" {
-                let _ = ipc_proxy.send_event(PdfEvent::Capture);
+            // Message is "render-complete[ <css-color>]"; the color is optional.
+            if let Some(rest) = req.body().as_str().strip_prefix("render-complete") {
+                let bg = mdp_core::pdf::parse_css_color(rest);
+                let _ = ipc_proxy.send_event(PdfEvent::Capture(bg));
             }
         })
         .with_on_page_load_handler(move |event, _url| {
             if matches!(event, PageLoadEvent::Finished) {
-                // Fallback: capture even if the render-complete signal is missed.
+                // Fallback: capture even if the render-complete signal is missed
+                // (no surface color available on this path).
                 let p = load_proxy.clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_millis(3000));
-                    let _ = p.send_event(PdfEvent::Capture);
+                    let _ = p.send_event(PdfEvent::Capture(None));
                 });
             }
         })
@@ -431,7 +574,7 @@ pub fn export_pdf(doc: &RenderedDoc, out: &Path) -> Result<(), FrontendError> {
     event_loop.run_return(move |event, _target, control_flow| {
         *control_flow = ControlFlow::Wait;
         match event {
-            Event::UserEvent(PdfEvent::Capture) => {
+            Event::UserEvent(PdfEvent::Capture(background)) => {
                 // Capture exactly once (both the IPC signal and the fallback fire).
                 if captured.swap(true, Ordering::SeqCst) {
                     return;
@@ -456,13 +599,16 @@ pub fn export_pdf(doc: &RenderedDoc, out: &Path) -> Result<(), FrontendError> {
                         // Slice the single tall page into Letter-height pages before
                         // writing. If pagination somehow fails, fall back to the raw
                         // capture so the user still gets a (single-page) PDF.
-                        let out_bytes = match mdp_core::pdf::paginate(&bytes, LETTER_HEIGHT_PT) {
-                            Ok(paged) => paged,
-                            Err(e) => {
-                                eprintln!("mdp: PDF pagination failed ({e}); wrote unpaginated");
-                                bytes
-                            }
-                        };
+                        let out_bytes =
+                            match mdp_core::pdf::paginate(&bytes, page_height_pt, background) {
+                                Ok(paged) => paged,
+                                Err(e) => {
+                                    eprintln!(
+                                        "mdp: PDF pagination failed ({e}); wrote unpaginated"
+                                    );
+                                    bytes
+                                }
+                            };
                         match std::fs::write(&out_for_block, &out_bytes) {
                             Ok(()) => Ok(out_bytes.len()),
                             Err(e) => Err(format!("write failed: {e}")),
@@ -495,8 +641,13 @@ pub fn export_pdf(doc: &RenderedDoc, out: &Path) -> Result<(), FrontendError> {
 /// PDF export is currently implemented only on macOS (design 4.5). Windows and
 /// Linux each need their own native path.
 #[cfg(not(target_os = "macos"))]
-pub fn export_pdf(doc: &RenderedDoc, out: &Path) -> Result<(), FrontendError> {
-    let _ = (doc, out);
+pub fn export_pdf(
+    doc: &RenderedDoc,
+    out: &Path,
+    page_width_pt: f64,
+    page_height_pt: f32,
+) -> Result<(), FrontendError> {
+    let _ = (doc, out, page_width_pt, page_height_pt);
     Err(FrontendError::WebView(
         "PDF export is currently implemented only on macOS".to_string(),
     ))
@@ -521,6 +672,73 @@ mod tests {
 
     fn body_string(resp: &Response<Cow<'static, [u8]>>) -> String {
         String::from_utf8(resp.body().to_vec()).unwrap()
+    }
+
+    #[test]
+    fn parses_export_ipc_messages() {
+        let r = parse_export_request("mdp:export a4 dark").unwrap();
+        assert_eq!(r.page_size, "a4");
+        assert_eq!(r.scheme, "dark");
+        // Scheme is optional and defaults to auto.
+        assert_eq!(
+            parse_export_request("mdp:export letter").unwrap().scheme,
+            "auto"
+        );
+        // An unknown scheme also falls back to auto rather than being forwarded.
+        assert_eq!(
+            parse_export_request("mdp:export letter neon")
+                .unwrap()
+                .scheme,
+            "auto"
+        );
+        // Unknown page size, missing size, and unrelated messages are rejected.
+        assert!(parse_export_request("mdp:export tabloid").is_none());
+        assert!(parse_export_request("mdp:export").is_none());
+        assert!(parse_export_request("render-complete rgb(0, 0, 0)").is_none());
+    }
+
+    #[test]
+    fn builds_export_subprocess_args() {
+        let req = ExportRequest {
+            page_size: "a4".to_string(),
+            scheme: "light".to_string(),
+        };
+        let strs: Vec<String> = export_args(
+            Path::new("/src/doc.md"),
+            Path::new("/out/doc.pdf"),
+            &req,
+            None,
+        )
+        .iter()
+        .map(|s| s.to_string_lossy().into_owned())
+        .collect();
+        assert_eq!(
+            strs,
+            vec![
+                "export",
+                "/src/doc.md",
+                "--to",
+                "/out/doc.pdf",
+                "--page-size",
+                "a4",
+                "--scheme",
+                "light"
+            ]
+        );
+
+        // A theme is threaded through as `--theme <path>` when present.
+        let with_theme: Vec<String> = export_args(
+            Path::new("a.md"),
+            Path::new("a.pdf"),
+            &req,
+            Some(Path::new("/themes/night.css")),
+        )
+        .iter()
+        .map(|s| s.to_string_lossy().into_owned())
+        .collect();
+        assert!(with_theme
+            .windows(2)
+            .any(|w| w[0] == "--theme" && w[1] == "/themes/night.css"));
     }
 
     #[test]

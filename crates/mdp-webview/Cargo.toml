@@ -27,3 +27,6 @@ block2 = "0.6"
 # Standard macOS app menu so Cmd-Q / Cmd-W close the window (a bare tao window
 # has no menu to route those shortcuts to).
 muda = "0.15"
+# Native "Save as PDF" panel for the in-app Export button. macOS-only for now,
+# matching where PDF export runs; keeps GTK/portal deps off the Linux build.
+rfd = "0.15"

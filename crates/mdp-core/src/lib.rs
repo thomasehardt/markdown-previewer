@@ -459,6 +459,8 @@ fn assemble_page(body: &str, source_md: &str, title: &str, opts: &RenderOptions)
 <label class=\"mdp-ctl\">Scheme <select id=\"mdp-scheme\"><option value=\"auto\">Auto</option><option value=\"light\">Light</option><option value=\"dark\">Dark</option></select></label>\
 <label class=\"mdp-ctl\">Width <select id=\"mdp-width\"><option value=\"comfortable\">Comfortable</option><option value=\"wide\">Wide</option><option value=\"full\">Full</option></select></label>\
 <button type=\"button\" id=\"mdp-view-toggle\" class=\"mdp-view-toggle\" aria-pressed=\"false\">View source</button>\
+<label class=\"mdp-ctl mdp-export-ctl\" hidden>PDF <select id=\"mdp-pagesize\"><option value=\"letter\">Letter</option><option value=\"a4\">A4</option></select></label>\
+<button type=\"button\" id=\"mdp-export\" class=\"mdp-view-toggle mdp-export-ctl\" hidden>Export PDF</button>\
 </div>\
 </div>\n"
         )

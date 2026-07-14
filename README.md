@@ -31,7 +31,8 @@ on its own (disable with `--no-watch`). Passing several files -- or a directory
 `mdp export FILE --to out.html`
 writes a single self-contained HTML file that opens offline in any browser,
 while `--to out.pdf` captures a high-fidelity vector PDF, paginated to US Letter
-pages (macOS today).
+or A4 (`--page-size`, macOS today). In the preview window an Export PDF button
+does the same without leaving the app.
 
 Platform status: macOS is verified end to end. Windows and Linux are designed
 but not yet built or tested; on Linux the webview needs `libwebkit2gtk` at

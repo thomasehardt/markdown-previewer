@@ -200,11 +200,38 @@
     });
   }
 
+  function setupExport() {
+    // Export to PDF is host-driven: the native app captures and writes the file.
+    // A plain browser (serve mode) has no host, so only reveal the controls when
+    // an IPC channel exists.
+    if (!window.ipc || typeof window.ipc.postMessage !== "function") {
+      return;
+    }
+    var btn = document.getElementById("mdp-export");
+    var sizeSel = document.getElementById("mdp-pagesize");
+    if (!btn || !sizeSel) {
+      return;
+    }
+    var controls = document.querySelectorAll(".mdp-export-ctl");
+    for (var i = 0; i < controls.length; i++) {
+      controls[i].removeAttribute("hidden");
+    }
+    btn.addEventListener("click", function () {
+      var size = sizeSel.value || "letter";
+      var schemeSel = document.getElementById("mdp-scheme");
+      var scheme = (schemeSel && schemeSel.value) || "auto";
+      // The host reads the current document and writes a PDF; it prompts for a
+      // save location. Message shape: "mdp:export <size> <scheme>".
+      window.ipc.postMessage("mdp:export " + size + " " + scheme);
+    });
+  }
+
   function ready() {
     setupViewToggle();
     setupReload();
     setupSettings();
     setupToc();
+    setupExport();
     renderMath();
     renderMermaid()
       .catch(function () {})
@@ -221,8 +248,17 @@
         window.dispatchEvent(new Event("mdp:render-complete"));
         // Signal a host that registered an IPC handler (e.g. PDF export waits
         // for this before capturing). Absent in the plain preview; guarded.
+        // Append the rendered surface color so a PDF capture can paint page
+        // margins/trailing space to match the document instead of white.
         if (window.ipc && typeof window.ipc.postMessage === "function") {
-          window.ipc.postMessage("render-complete");
+          var surface = document.querySelector(".mdp-document") || document.body;
+          var bg = "";
+          try {
+            bg = window.getComputedStyle(surface).backgroundColor || "";
+          } catch (e) {
+            bg = "";
+          }
+          window.ipc.postMessage("render-complete " + bg);
         }
       });
   }

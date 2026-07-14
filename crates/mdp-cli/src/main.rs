@@ -34,6 +34,11 @@ struct Cli {
     #[arg(long, value_enum, global = true)]
     scheme: Option<Scheme>,
 
+    /// Page size for PDF export (overrides config; unset follows config then
+    /// letter). Has no effect on HTML export or the preview.
+    #[arg(long = "page-size", value_enum, global = true)]
+    page_size: Option<PageSize>,
+
     /// Disable file watching (no reload prompts). Wired for later phases.
     #[arg(long, global = true)]
     no_watch: bool,
@@ -83,6 +88,28 @@ pub(crate) enum Scheme {
     Dark,
 }
 
+/// Paper size for PDF export. Values are the standard portrait dimensions.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum PageSize {
+    Letter,
+    A4,
+}
+
+impl PageSize {
+    /// Portrait `(width, height)` in PDF points (72pt = 1in). Width is `f64` for
+    /// the capture window size; height is `f32` for pagination.
+    #[cfg_attr(not(feature = "webview"), allow(dead_code))]
+    pub(crate) fn dimensions_pt(self) -> (f64, f32) {
+        match self {
+            // 8.5 x 11 in.
+            PageSize::Letter => (612.0, 792.0),
+            // 210 x 297 mm.
+            PageSize::A4 => (595.28, 841.89),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 enum Frontend {
     Webview,
@@ -112,6 +139,7 @@ fn main() -> ExitCode {
     // Resolve options with precedence CLI flag > config.toml > built-in default.
     let theme = config::resolve_theme(cli.theme.clone(), config.theme.clone());
     let scheme: ColorScheme = config::resolve_scheme(cli.scheme, config.scheme).into();
+    let page_size = config::resolve_page_size(cli.page_size, config.page_size);
 
     // The theme is read once (it does not change during a session) and is shared
     // by the export and preview paths.
@@ -128,7 +156,14 @@ fn main() -> ExitCode {
 
     // Export is a headless one-shot: render and write a file, no display or watch.
     if let Some(Command::Export { file, to }) = &cli.command {
-        return run_export(file, to, scheme, extra_theme_css, cli.view_source_default);
+        return run_export(
+            file,
+            to,
+            scheme,
+            extra_theme_css,
+            cli.view_source_default,
+            page_size,
+        );
     }
 
     // Otherwise resolve the target files and the display action. Multiple files
@@ -186,14 +221,16 @@ fn main() -> ExitCode {
     };
 
     let source: Arc<dyn DocSource> = Arc::new(RenderSpec {
-        files,
+        files: files.clone(),
         scheme,
         extra_theme_css,
         view_source: cli.view_source_default,
     });
 
     match action {
-        Action::Webview => open_webview(&source, &watch_paths),
+        // The webview frontend also gets the source paths and theme so its in-app
+        // Export action can shell out to `mdp export` for the shown file.
+        Action::Webview => open_webview(&source, &files, theme.as_deref(), &watch_paths),
         Action::Serve { port, open } => open_serve(&source, &watch_paths, port, open),
     }
 }
@@ -300,6 +337,7 @@ fn run_export(
     scheme: ColorScheme,
     extra_theme_css: Option<String>,
     view_source: bool,
+    page_size: PageSize,
 ) -> ExitCode {
     let ext = out
         .extension()
@@ -307,7 +345,7 @@ fn run_export(
         .unwrap_or("")
         .to_ascii_lowercase();
     match ext.as_str() {
-        "pdf" => export_pdf_file(file, out, scheme, extra_theme_css),
+        "pdf" => export_pdf_file(file, out, scheme, extra_theme_css, page_size),
         "html" | "htm" => {
             let markdown = match std::fs::read_to_string(file) {
                 Ok(md) => md,
@@ -380,6 +418,7 @@ fn export_pdf_file(
     out: &Path,
     scheme: ColorScheme,
     extra_theme_css: Option<String>,
+    page_size: PageSize,
 ) -> ExitCode {
     let markdown = match std::fs::read_to_string(file) {
         Ok(md) => md,
@@ -397,7 +436,8 @@ fn export_pdf_file(
         file_nav: Vec::new(),
     };
     let doc = render_document(&markdown, &opts);
-    match mdp_webview::export_pdf(&doc, out) {
+    let (width_pt, height_pt) = page_size.dimensions_pt();
+    match mdp_webview::export_pdf(&doc, out, width_pt, height_pt) {
         Ok(()) => {
             eprintln!("mdp: wrote {}", out.display());
             ExitCode::SUCCESS
@@ -416,6 +456,7 @@ fn export_pdf_file(
     out: &Path,
     _scheme: ColorScheme,
     _extra_theme_css: Option<String>,
+    _page_size: PageSize,
 ) -> ExitCode {
     let _ = (file, out);
     eprintln!("mdp: PDF export requires the `webview` feature (macOS).");
@@ -429,8 +470,13 @@ fn export_pdf_file(
 /// cannot initialize (design risk #5: e.g. a missing Linux webkit runtime), we
 /// automatically fall back to the local-server frontend when it is available.
 #[cfg(feature = "webview")]
-fn open_webview(source: &Arc<dyn DocSource>, watch: &[PathBuf]) -> ExitCode {
-    match mdp_webview::show(source.clone(), watch) {
+fn open_webview(
+    source: &Arc<dyn DocSource>,
+    files: &[PathBuf],
+    theme: Option<&Path>,
+    watch: &[PathBuf],
+) -> ExitCode {
+    match mdp_webview::show(source.clone(), watch, files, theme) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("mdp: {e}");
@@ -450,7 +496,13 @@ fn open_webview(source: &Arc<dyn DocSource>, watch: &[PathBuf]) -> ExitCode {
 /// When built without the `webview` feature, prefer the server frontend if it is
 /// present; otherwise there is no way to display.
 #[cfg(not(feature = "webview"))]
-fn open_webview(source: &Arc<dyn DocSource>, watch: &[PathBuf]) -> ExitCode {
+fn open_webview(
+    source: &Arc<dyn DocSource>,
+    files: &[PathBuf],
+    theme: Option<&Path>,
+    watch: &[PathBuf],
+) -> ExitCode {
+    let _ = (files, theme);
     #[cfg(feature = "serve")]
     {
         eprintln!("mdp: built without the `webview` feature; using the local server.");
@@ -504,6 +556,14 @@ mod tests {
     #[test]
     fn cli_definition_is_internally_consistent() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn page_size_dimensions_are_standard() {
+        assert_eq!(PageSize::Letter.dimensions_pt(), (612.0, 792.0));
+        let (w, h) = PageSize::A4.dimensions_pt();
+        assert!((w - 595.28).abs() < 0.01, "A4 width {w}");
+        assert!((h - 841.89).abs() < 0.01, "A4 height {h}");
     }
 
     #[cfg(feature = "webview")]
@@ -629,7 +689,14 @@ mod tests {
         std::fs::write(&input, "# Title\n\nHello **world**.\n").unwrap();
         let out = dir.path().join("out.html");
 
-        let _ = run_export(&input, &out, ColorScheme::Auto, None, false);
+        let _ = run_export(
+            &input,
+            &out,
+            ColorScheme::Auto,
+            None,
+            false,
+            PageSize::Letter,
+        );
 
         let html = std::fs::read_to_string(&out).expect("export wrote the file");
         assert!(html.contains("<h1"), "rendered heading present");
@@ -648,7 +715,14 @@ mod tests {
         std::fs::write(&input, "# x\n").unwrap();
         let out = dir.path().join("out.rtf");
 
-        let _ = run_export(&input, &out, ColorScheme::Auto, None, false);
+        let _ = run_export(
+            &input,
+            &out,
+            ColorScheme::Auto,
+            None,
+            false,
+            PageSize::Letter,
+        );
         assert!(
             !out.exists(),
             "no output should be written for an unsupported target"

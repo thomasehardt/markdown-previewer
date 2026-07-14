@@ -30,6 +30,8 @@ requirement to the implementation plan in `docs/design.md` section 9.
 | FR16 | Accept multiple input files. | 1/8 | Done (file switcher bar; index routing; all watched) |
 | FR17 | In-preview switcher for theme, color scheme, and reading width, remembered across sessions. | 8 | Done (default/sepia/slate themes; localStorage) |
 | FR18 | Table-of-contents sidebar generated from headings, toggleable. | 8 | Done (Contents toggle; shown only when headings exist; remembered) |
+| FR19 | Selectable PDF page size (US Letter or A4). | post-8 | Done: `--page-size letter\|a4` flag and `page_size` config key (flag > config > letter). Verified A4/Letter via `pdfinfo`. |
+| FR20 | Export to PDF from the preview UI (not just the CLI). | post-8 | Done (macOS): a toolbar Export button with a page-size picker prompts for a save location and shells out to `mdp export`. Shown only under a native host (hidden in serve/browser). Click path pending manual confirmation. |
 
 ## Non-functional requirements
 
@@ -59,11 +61,12 @@ Tracked work that is deliberately not done yet:
 2. **Freeze diagrams to static SVG** in HTML/PDF export (needs a browser engine
    at export time) so an export does not depend on JS running on open.
 3. **Test documentation code snippets** as part of the build.
-4. **PDF export polish.** Two minor cosmetic items: (a) in a dark color scheme the
-   blank area below the content on the last page is unpainted (white), because the
-   capture is only as tall as the content; (b) long lines are wrapped for export
-   rather than broken at semantic points. A smart paged-media pass (e.g. paged.js
-   before capture) would address both and add real page-break control.
+4. **Smart page breaks in PDF export.** Breaks fall at fixed heights, so an
+   element can be split across the page boundary. Uniform-size pages by pure
+   windowing cannot respect `break-inside` (content is not moved), so this needs a
+   paged-media pass (e.g. paged.js run before capture), which would also give real
+   widow/orphan control. (The dark-mode last-page white strip is now fixed: the
+   rendered surface color is painted behind each page.)
 5. **Distributable install**: prebuilt cross-platform binaries (e.g. via
    cargo-dist and GitHub Releases) and a Homebrew formula, so users need not
    build from source. Depends on the Windows/Linux work. `scripts/install.sh`

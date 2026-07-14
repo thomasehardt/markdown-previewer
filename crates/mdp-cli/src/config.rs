@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::Scheme;
+use crate::{PageSize, Scheme};
 
 /// Persistent defaults parsed from `config.toml`. Unknown keys are rejected so a
 /// typo surfaces (as a warning) rather than being silently ignored.
@@ -24,6 +24,8 @@ pub struct Config {
     pub theme: Option<PathBuf>,
     /// Standing default color scheme.
     pub scheme: Option<Scheme>,
+    /// Standing default PDF page size.
+    pub page_size: Option<PageSize>,
 }
 
 impl Config {
@@ -87,6 +89,11 @@ pub fn resolve_theme(flag: Option<PathBuf>, config: Option<PathBuf>) -> Option<P
 /// Effective color scheme: CLI flag wins, then config, then `Auto`.
 pub fn resolve_scheme(flag: Option<Scheme>, config: Option<Scheme>) -> Scheme {
     flag.or(config).unwrap_or(Scheme::Auto)
+}
+
+/// Effective PDF page size: CLI flag wins, then config, then `Letter`.
+pub fn resolve_page_size(flag: Option<PageSize>, config: Option<PageSize>) -> PageSize {
+    flag.or(config).unwrap_or(PageSize::Letter)
 }
 
 #[cfg(test)]
@@ -212,5 +219,24 @@ mod tests {
             Scheme::Dark
         ));
         assert!(matches!(resolve_scheme(None, None), Scheme::Auto));
+    }
+
+    #[test]
+    fn parses_page_size() {
+        let cfg: Config = toml::from_str("page_size = \"a4\"\n").unwrap();
+        assert!(matches!(cfg.page_size, Some(PageSize::A4)));
+    }
+
+    #[test]
+    fn page_size_precedence_flag_beats_config_beats_default() {
+        assert!(matches!(
+            resolve_page_size(Some(PageSize::A4), Some(PageSize::Letter)),
+            PageSize::A4
+        ));
+        assert!(matches!(
+            resolve_page_size(None, Some(PageSize::A4)),
+            PageSize::A4
+        ));
+        assert!(matches!(resolve_page_size(None, None), PageSize::Letter));
     }
 }
