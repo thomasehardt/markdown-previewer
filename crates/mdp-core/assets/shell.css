@@ -301,3 +301,66 @@ body.mdp-view-source-active .mdp-source {
   background: var(--accent);
   border-color: var(--accent);
 }
+
+/* Heading anchor offset so TOC jumps clear the fixed toolbar. */
+.mdp-document h1,
+.mdp-document h2,
+.mdp-document h3,
+.mdp-document h4,
+.mdp-document h5,
+.mdp-document h6 {
+  scroll-margin-top: var(--space-4);
+}
+
+/* Table-of-contents sidebar. Hidden until toggled from the toolbar; when open it
+ * is a fixed left rail and the content shifts right. Token-driven. */
+.mdp-toc {
+  display: none;
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 16rem;
+  height: 100vh;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-3);
+  background: var(--surface-sunken);
+  border-right: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+body.mdp-toc-open .mdp-toc {
+  display: block;
+}
+body.mdp-toc-open {
+  padding-left: 16rem;
+}
+.mdp-toc-title {
+  font-weight: 650;
+  color: var(--text-heading);
+  margin-bottom: var(--space-2);
+}
+.mdp-toc ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.mdp-toc li {
+  margin: var(--space-1) 0;
+}
+.mdp-toc a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.mdp-toc a:hover {
+  color: var(--accent);
+}
+.mdp-toc-l2 {
+  padding-left: var(--space-3);
+}
+.mdp-toc-l3 {
+  padding-left: var(--space-4);
+}
+.mdp-toc-l4,
+.mdp-toc-l5,
+.mdp-toc-l6 {
+  padding-left: var(--space-5);
+}

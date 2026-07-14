@@ -16,12 +16,12 @@ expression: doc.html
 </head>
 <body>
 <div id="mdp-reload-banner" class="mdp-reload-banner" role="status" hidden>This file changed on disk. <button type="button" id="mdp-reload-accept">Reload</button> <button type="button" id="mdp-reload-dismiss">Dismiss</button></div>
-<div class="mdp-toolbar" role="toolbar" aria-label="Preview settings"><label class="mdp-ctl">Theme <select id="mdp-theme"><option value="default">Default</option><option value="sepia">Sepia</option><option value="slate">Slate</option></select></label><label class="mdp-ctl">Scheme <select id="mdp-scheme"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></label><label class="mdp-ctl">Width <select id="mdp-width"><option value="comfortable">Comfortable</option><option value="wide">Wide</option><option value="full">Full</option></select></label><button type="button" id="mdp-view-toggle" class="mdp-view-toggle" aria-pressed="false">View source</button></div>
+<nav class="mdp-toc" aria-label="Table of contents"><div class="mdp-toc-title">Contents</div><ul><li class="mdp-toc-l1"><a href="#document-title">Document Title</a></li><li class="mdp-toc-l2"><a href="#lists">Lists</a></li><li class="mdp-toc-l2"><a href="#blockquote">Blockquote</a></li><li class="mdp-toc-l2"><a href="#table">Table</a></li><li class="mdp-toc-l2"><a href="#fenced-code">Fenced code</a></li><li class="mdp-toc-l2"><a href="#alert">Alert</a></li><li class="mdp-toc-l2"><a href="#math">Math</a></li><li class="mdp-toc-l2"><a href="#diagram">Diagram</a></li><li class="mdp-toc-l2"><a href="#footnote">Footnote</a></li></ul></nav><div class="mdp-toolbar" role="toolbar" aria-label="Preview settings"><button type="button" id="mdp-toc-toggle" class="mdp-view-toggle" aria-pressed="false">Contents</button><label class="mdp-ctl">Theme <select id="mdp-theme"><option value="default">Default</option><option value="sepia">Sepia</option><option value="slate">Slate</option></select></label><label class="mdp-ctl">Scheme <select id="mdp-scheme"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></label><label class="mdp-ctl">Width <select id="mdp-width"><option value="comfortable">Comfortable</option><option value="wide">Wide</option><option value="full">Full</option></select></label><button type="button" id="mdp-view-toggle" class="mdp-view-toggle" aria-pressed="false">View source</button></div>
 <main class="mdp-document">
-<h1>Document Title</h1>
+<h1 id="document-title">Document Title<a href="#document-title" class="anchor" rel="noopener noreferrer"></a></h1>
 <p>A paragraph with <strong>strong</strong>, <em>emphasis</em>, <del>strikethrough</del>, <code>inline code</code>, and
 a <a href="#document-title" rel="noopener noreferrer">link to a heading</a>. An autolink: <a href="https://example.com" rel="noopener noreferrer">https://example.com</a>.</p>
-<h2>Lists</h2>
+<h2 id="lists">Lists<a href="#lists" class="anchor" rel="noopener noreferrer"></a></h2>
 <p>Unordered:</p>
 <ul>
 <li>First</li>
@@ -43,12 +43,12 @@ a <a href="#document-title" rel="noopener noreferrer">link to a heading</a>. An 
 <li><input type="checkbox" disabled=""> Not done</li>
 <li><input type="checkbox" checked="" disabled=""> Done</li>
 </ul>
-<h2>Blockquote</h2>
+<h2 id="blockquote">Blockquote<a href="#blockquote" class="anchor" rel="noopener noreferrer"></a></h2>
 <blockquote>
 <p>A quote spanning
 two lines.</p>
 </blockquote>
-<h2>Table</h2>
+<h2 id="table">Table<a href="#table" class="anchor" rel="noopener noreferrer"></a></h2>
 <table>
 <thead>
 <tr>
@@ -70,27 +70,27 @@ two lines.</p>
 </tr>
 </tbody>
 </table>
-<h2>Fenced code</h2>
+<h2 id="fenced-code">Fenced code<a href="#fenced-code" class="anchor" rel="noopener noreferrer"></a></h2>
 <pre><code class="language-rust"><span class="mdp-hl-source mdp-hl-rust"><span class="mdp-hl-meta mdp-hl-function mdp-hl-rust"><span class="mdp-hl-meta mdp-hl-function mdp-hl-rust"><span class="mdp-hl-storage mdp-hl-type mdp-hl-function mdp-hl-rust">fn</span> </span><span class="mdp-hl-entity mdp-hl-name mdp-hl-function mdp-hl-rust">main</span></span><span class="mdp-hl-meta mdp-hl-function mdp-hl-rust"><span class="mdp-hl-meta mdp-hl-function mdp-hl-parameters mdp-hl-rust"><span class="mdp-hl-punctuation mdp-hl-section mdp-hl-parameters mdp-hl-begin mdp-hl-rust">(</span></span><span class="mdp-hl-meta mdp-hl-function mdp-hl-rust"><span class="mdp-hl-meta mdp-hl-function mdp-hl-parameters mdp-hl-rust"><span class="mdp-hl-punctuation mdp-hl-section mdp-hl-parameters mdp-hl-end mdp-hl-rust">)</span></span></span></span><span class="mdp-hl-meta mdp-hl-function mdp-hl-rust"> </span><span class="mdp-hl-meta mdp-hl-function mdp-hl-rust"><span class="mdp-hl-meta mdp-hl-block mdp-hl-rust"><span class="mdp-hl-punctuation mdp-hl-section mdp-hl-block mdp-hl-begin mdp-hl-rust">{</span>
     <span class="mdp-hl-support mdp-hl-macro mdp-hl-rust">println!</span><span class="mdp-hl-meta mdp-hl-group mdp-hl-rust"><span class="mdp-hl-punctuation mdp-hl-section mdp-hl-group mdp-hl-begin mdp-hl-rust">(</span></span><span class="mdp-hl-meta mdp-hl-group mdp-hl-rust"><span class="mdp-hl-string mdp-hl-quoted mdp-hl-double mdp-hl-rust"><span class="mdp-hl-punctuation mdp-hl-definition mdp-hl-string mdp-hl-begin mdp-hl-rust">"</span>hello<span class="mdp-hl-punctuation mdp-hl-definition mdp-hl-string mdp-hl-end mdp-hl-rust">"</span></span></span><span class="mdp-hl-meta mdp-hl-group mdp-hl-rust"><span class="mdp-hl-punctuation mdp-hl-section mdp-hl-group mdp-hl-end mdp-hl-rust">)</span></span><span class="mdp-hl-punctuation mdp-hl-terminator mdp-hl-rust">;</span>
 </span><span class="mdp-hl-meta mdp-hl-block mdp-hl-rust"><span class="mdp-hl-punctuation mdp-hl-section mdp-hl-block mdp-hl-end mdp-hl-rust">}</span></span></span>
 </span></code></pre>
-<h2>Alert</h2>
+<h2 id="alert">Alert<a href="#alert" class="anchor" rel="noopener noreferrer"></a></h2>
 <div class="markdown-alert markdown-alert-warning">
 <p class="markdown-alert-title">Warning</p>
 <p>Be careful here.</p>
 </div>
-<h2>Math</h2>
+<h2 id="math">Math<a href="#math" class="anchor" rel="noopener noreferrer"></a></h2>
 <p>Inline math <span data-math-style="inline">E = mc^2</span> appears within a sentence, and a display equation is set
 on its own line:</p>
 <p><span data-math-style="display">\int_0^1 x^2 \, dx = \frac{1}{3}</span></p>
-<h2>Diagram</h2>
+<h2 id="diagram">Diagram<a href="#diagram" class="anchor" rel="noopener noreferrer"></a></h2>
 <pre><code class="language-mermaid">graph TD;
     A[Start] --&gt; B{Choice};
     B --&gt;|yes| C[Do it];
     B --&gt;|no| D[Skip];
 </code></pre>
-<h2>Footnote</h2>
+<h2 id="footnote">Footnote<a href="#footnote" class="anchor" rel="noopener noreferrer"></a></h2>
 <p>This claim needs a source.<sup class="footnote-ref"><a href="#fn-src" id="fnref-src" rel="noopener noreferrer">1</a></sup></p>
 <section class="footnotes">
 <ol>

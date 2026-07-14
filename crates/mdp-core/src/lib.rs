@@ -151,6 +151,9 @@ fn markdown_to_html(markdown: &str) -> String {
     // `math_dollars`; `math_code` (```math fences) is intentionally left off so
     // the single client selector `[data-math-style]` covers all math.
     options.extension.math_dollars = true;
+    // Header ids (empty prefix) so table-of-contents links resolve to headings.
+    // comrak puts id="slug" on the <hN> and adds an empty .anchor link inside.
+    options.extension.header_id_prefix = Some(String::new());
 
     // render.unsafe_ stays false (the default): raw HTML is escaped/suppressed.
 
@@ -404,15 +407,27 @@ fn assemble_page(body: &str, source_md: &str, title: &str, opts: &RenderOptions)
     // Interactive chrome (view-source toggle + reload banner). Omitted when
     // show_chrome is off, e.g. PDF export captures just the document.
     let chrome = if opts.show_chrome {
-        "<div id=\"mdp-reload-banner\" class=\"mdp-reload-banner\" role=\"status\" hidden>This file changed on disk. <button type=\"button\" id=\"mdp-reload-accept\">Reload</button> <button type=\"button\" id=\"mdp-reload-dismiss\">Dismiss</button></div>\n\
+        // A Contents toggle + TOC sidebar only when the document has headings.
+        let (toc_nav, contents_btn) = match build_toc(body) {
+            Some(nav) => (
+                nav,
+                "<button type=\"button\" id=\"mdp-toc-toggle\" class=\"mdp-view-toggle\" aria-pressed=\"false\">Contents</button>",
+            ),
+            None => (String::new(), ""),
+        };
+        format!(
+            "<div id=\"mdp-reload-banner\" class=\"mdp-reload-banner\" role=\"status\" hidden>This file changed on disk. <button type=\"button\" id=\"mdp-reload-accept\">Reload</button> <button type=\"button\" id=\"mdp-reload-dismiss\">Dismiss</button></div>\n\
+{toc_nav}\
 <div class=\"mdp-toolbar\" role=\"toolbar\" aria-label=\"Preview settings\">\
+{contents_btn}\
 <label class=\"mdp-ctl\">Theme <select id=\"mdp-theme\"><option value=\"default\">Default</option><option value=\"sepia\">Sepia</option><option value=\"slate\">Slate</option></select></label>\
 <label class=\"mdp-ctl\">Scheme <select id=\"mdp-scheme\"><option value=\"auto\">Auto</option><option value=\"light\">Light</option><option value=\"dark\">Dark</option></select></label>\
 <label class=\"mdp-ctl\">Width <select id=\"mdp-width\"><option value=\"comfortable\">Comfortable</option><option value=\"wide\">Wide</option><option value=\"full\">Full</option></select></label>\
 <button type=\"button\" id=\"mdp-view-toggle\" class=\"mdp-view-toggle\" aria-pressed=\"false\">View source</button>\
 </div>\n"
+        )
     } else {
-        ""
+        String::new()
     };
 
     format!(
@@ -445,6 +460,97 @@ fn assemble_page(body: &str, source_md: &str, title: &str, opts: &RenderOptions)
         body_extra = body_extra,
         shell_js = shell_js,
     )
+}
+
+/// A heading extracted from the rendered body, for the table of contents.
+struct Heading {
+    level: u8,
+    id: String,
+    text: String,
+}
+
+/// Build a table-of-contents `<nav>` from the headings in `html` (which carry
+/// ids from comrak's `header_ids`). Returns `None` when there are no headings.
+fn build_toc(html: &str) -> Option<String> {
+    let headings = extract_headings(html);
+    if headings.is_empty() {
+        return None;
+    }
+    let mut nav = String::from(
+        "<nav class=\"mdp-toc\" aria-label=\"Table of contents\"><div class=\"mdp-toc-title\">Contents</div><ul>",
+    );
+    for h in &headings {
+        let _ = write!(
+            nav,
+            "<li class=\"mdp-toc-l{}\"><a href=\"#{}\">{}</a></li>",
+            h.level, h.id, h.text
+        );
+    }
+    nav.push_str("</ul></nav>");
+    Some(nav)
+}
+
+/// Scan rendered HTML for `<h1>`..`<h6>` elements carrying an `id`, returning
+/// their level, id, and plain-text label (inner tags stripped).
+fn extract_headings(html: &str) -> Vec<Heading> {
+    let mut out = Vec::new();
+    let mut search_from = 0;
+    while let Some(rel) = html[search_from..].find("<h") {
+        let start = search_from + rel;
+        let level_pos = start + 2;
+        let level = match html.as_bytes().get(level_pos).copied() {
+            Some(b) if (b'1'..=b'6').contains(&b) => b - b'0',
+            _ => {
+                search_from = level_pos.min(html.len());
+                continue;
+            }
+        };
+        let Some(gt_rel) = html[level_pos..].find('>') else {
+            break;
+        };
+        let tag_end = level_pos + gt_rel;
+        let open_tag = &html[start..=tag_end];
+        let close = format!("</h{level}>");
+        let Some(close_rel) = html[tag_end + 1..].find(&close) else {
+            search_from = tag_end + 1;
+            continue;
+        };
+        let inner_end = tag_end + 1 + close_rel;
+        let inner = &html[tag_end + 1..inner_end];
+        if let Some(id) = attr_value(open_tag, "id") {
+            out.push(Heading {
+                level,
+                id,
+                text: strip_tags(inner).trim().to_string(),
+            });
+        }
+        search_from = inner_end + close.len();
+    }
+    out
+}
+
+/// Read the value of `name="..."` from an opening tag, if present.
+fn attr_value(tag: &str, name: &str) -> Option<String> {
+    let needle = format!("{name}=\"");
+    let start = tag.find(&needle)? + needle.len();
+    let rest = &tag[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+/// Remove `<...>` tags from a fragment, keeping the (already-escaped) text.
+fn strip_tags(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    out
 }
 
 /// The inlined syntect highlight theme CSS, built once. The light theme's span
@@ -679,6 +785,47 @@ mod tests {
         // inlined toggle script, so a whole-page scan would be misleading.
         assert!(off.html.contains("<body>\n"));
         assert!(!off.html.contains("<body class=\"mdp-view-source-active\">"));
+    }
+
+    #[test]
+    fn extract_headings_reads_level_id_and_text() {
+        let hs = extract_headings(
+            "<h1 id=\"a\">One</h1><p>x</p><h2 id=\"b\">Two <code>c</code></h2><hr>",
+        );
+        assert_eq!(hs.len(), 2);
+        assert_eq!((hs[0].level, hs[0].id.as_str(), hs[0].text.as_str()), (1, "a", "One"));
+        assert_eq!((hs[1].level, hs[1].id.as_str(), hs[1].text.as_str()), (2, "b", "Two c"));
+    }
+
+    #[test]
+    fn toc_is_built_from_headings() {
+        let doc = render_document(
+            "# Title\n\n## Section A\n\ntext\n\n## Section B\n",
+            &RenderOptions::default(),
+        );
+        assert!(doc.html.contains("<nav class=\"mdp-toc\""));
+        assert!(doc.html.contains("Section A") && doc.html.contains("Section B"));
+        assert!(doc.html.contains("id=\"mdp-toc-toggle\""));
+        assert!(doc.html.contains("href=\"#"));
+    }
+
+    #[test]
+    fn no_toc_without_headings() {
+        let doc = render_document("Just a paragraph, no headings.\n", &RenderOptions::default());
+        assert!(!doc.html.contains("<nav class=\"mdp-toc\""));
+        assert!(!doc.html.contains("id=\"mdp-toc-toggle\""));
+    }
+
+    #[test]
+    fn no_toc_when_chrome_disabled() {
+        let doc = render_document(
+            "# H\n",
+            &RenderOptions {
+                show_chrome: false,
+                ..Default::default()
+            },
+        );
+        assert!(!doc.html.contains("<nav class=\"mdp-toc\""));
     }
 
     /// rust-embed reads `assets/` from disk in debug builds, so the gitignored

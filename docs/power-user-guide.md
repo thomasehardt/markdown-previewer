@@ -112,6 +112,8 @@ remembers each in `localStorage` so it persists across reloads and files:
   covering light and dark via CSS `light-dark()`).
 - **Scheme** - `auto` (follow the OS), `light`, or `dark`.
 - **Width** - `comfortable`, `wide`, or `full`.
+- **Contents** - a table-of-contents sidebar built from the document's headings
+  (the toggle appears only when there are headings), remembered like the rest.
 
 Each maps to a root attribute the theme CSS keys off (`data-mdp-theme`,
 `data-color-scheme`, `data-mdp-width`); the attribute is dropped at its default,

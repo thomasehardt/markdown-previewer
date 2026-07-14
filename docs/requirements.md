@@ -29,6 +29,7 @@ requirement to the implementation plan in `docs/design.md` section 9.
 | FR15 | Color scheme control: auto (follow OS), light, dark. | 1 | Done (plumbed; `--scheme`) |
 | FR16 | Accept multiple input files. | 1 | Partial (accepted; first previewed) |
 | FR17 | In-preview switcher for theme, color scheme, and reading width, remembered across sessions. | 8 | Done (default/sepia/slate themes; localStorage) |
+| FR18 | Table-of-contents sidebar generated from headings, toggleable. | 8 | Done (Contents toggle; shown only when headings exist; remembered) |
 
 ## Non-functional requirements
 

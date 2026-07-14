@@ -175,10 +175,36 @@
     control("mdp-scheme", "mdp-scheme", "data-color-scheme", "auto", initialScheme);
   }
 
+  /* Table-of-contents sidebar toggle. Flips a body class the layout keys off;
+   * the open/closed state is remembered in localStorage. */
+  function setupToc() {
+    var btn = document.getElementById("mdp-toc-toggle");
+    if (!btn) {
+      return;
+    }
+    function apply(open) {
+      document.body.classList.toggle("mdp-toc-open", open);
+      btn.setAttribute("aria-pressed", open ? "true" : "false");
+    }
+    var open = false;
+    try {
+      open = localStorage.getItem("mdp-toc-open") === "1";
+    } catch (e) {}
+    apply(open);
+    btn.addEventListener("click", function () {
+      var next = !document.body.classList.contains("mdp-toc-open");
+      apply(next);
+      try {
+        localStorage.setItem("mdp-toc-open", next ? "1" : "0");
+      } catch (e) {}
+    });
+  }
+
   function ready() {
     setupViewToggle();
     setupReload();
     setupSettings();
+    setupToc();
     renderMath();
     renderMermaid()
       .catch(function () {})
