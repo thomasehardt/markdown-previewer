@@ -196,22 +196,26 @@ body {
   top: 0;
   z-index: 30;
   box-sizing: border-box;
-  height: 2.75rem;
+  min-height: 2.75rem;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--space-3);
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-1) var(--space-3);
   background: var(--surface-card);
   border-bottom: 1px solid var(--border);
   font-family: var(--font-body);
   font-size: 0.8rem;
 }
+/* Controls sit at the right; when the window is too narrow to fit them beside
+ * the tabs they wrap to their own row rather than overlapping. */
 .mdp-controls {
   flex: 0 0 auto;
   margin-left: auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-1) var(--space-3);
 }
 .mdp-ctl {
   display: inline-flex;
@@ -368,7 +372,7 @@ body.mdp-toc-open {
 /* Multi-file switcher bar: a top strip of file tabs, shown for two or more
  * files. Token-driven; the current file is highlighted. */
 .mdp-files {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow-x: auto;
   font-size: 0.85rem;
