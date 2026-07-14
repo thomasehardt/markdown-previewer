@@ -927,6 +927,82 @@ mod tests {
         assert!(!doc.html.contains("<nav class=\"mdp-files\""));
     }
 
+    #[test]
+    fn unknown_language_still_renders_the_code() {
+        // An unknown fence language falls back to plaintext rather than dropping
+        // the code, and keeps its language class.
+        let doc = render_document(
+            "```zzznotalang\nlet x = 1;\n```\n",
+            &RenderOptions::default(),
+        );
+        assert!(doc.html.contains("let x = 1;"));
+        assert!(doc.html.contains("language-zzznotalang"));
+    }
+
+    #[test]
+    fn renders_all_features_and_chrome_branches_together() {
+        // Exercise the whole pipeline and every chrome-assembly branch at once:
+        // headings (TOC), math, mermaid, highlighted code, forced dark, a user
+        // theme, view-source-default, and a multi-file nav bar.
+        let md = "# Title\n\n## Section\n\nText with $a^2$ and $$b^2$$.\n\n\
+| A | B |\n|---|---|\n| 1 | 2 |\n\n- [x] done\n- [ ] todo\n\n\
+> [!NOTE]\n> note\n\n```rust\nfn main() {}\n```\n\n\
+```mermaid\ngraph TD; A-->B;\n```\n\nA footnote.[^f]\n\n[^f]: body\n";
+        let opts = RenderOptions {
+            title: Some("All".to_string()),
+            color_scheme: ColorScheme::Dark,
+            extra_theme_css: Some(":root{--accent:#123456}".to_string()),
+            view_source_default: true,
+            show_chrome: true,
+            file_nav: vec![
+                NavItem {
+                    label: "a".into(),
+                    href: "/?doc=0".into(),
+                    current: true,
+                },
+                NavItem {
+                    label: "b".into(),
+                    href: "/?doc=1".into(),
+                    current: false,
+                },
+            ],
+        };
+        let doc = render_document(md, &opts);
+        assert!(doc.html.contains("data-math-style"));
+        assert!(doc.html.contains("language-mermaid"));
+        assert!(doc.html.contains("mdp-hl-"));
+        assert!(doc.html.contains("<nav class=\"mdp-toc\""));
+        assert!(doc.html.contains("<nav class=\"mdp-files\""));
+        assert!(doc.html.contains("data-color-scheme=\"dark\""));
+        assert!(doc.html.contains("--accent:#123456"));
+        assert!(doc.html.contains("mdp-view-source-active"));
+    }
+
+    #[test]
+    fn extract_headings_skips_headings_without_id() {
+        let hs = extract_headings("<h2>No id here</h2><h3 id=\"y\">Yes</h3>");
+        assert_eq!(hs.len(), 1);
+        assert_eq!(hs[0].id, "y");
+    }
+
+    #[test]
+    fn public_types_expose_debug_and_clone() {
+        // Debug and Clone are part of the public API; exercise them.
+        let opts = RenderOptions::default();
+        let _ = format!("{:?}", opts.clone());
+        for scheme in [ColorScheme::Auto, ColorScheme::Light, ColorScheme::Dark] {
+            let _ = format!("{scheme:?}");
+        }
+        let item = NavItem {
+            label: "a".into(),
+            href: "/".into(),
+            current: true,
+        };
+        let _ = format!("{:?}", item.clone());
+        let doc = render_document("hi", &opts);
+        let _ = format!("{:?}", doc.clone());
+    }
+
     /// rust-embed reads `assets/` from disk in debug builds, so the gitignored
     /// `assets/vendor/` tree (populated by scripts/vendor-assets.sh) is visible
     /// to the same loader that serves the shell/theme files. .gitignore only

@@ -1,0 +1,17 @@
+# cargo-deny configuration. The license gate enforces the MIT-compatible
+# allowlist across the full transitive dependency tree (design section 5/7):
+# anything not listed here fails CI. Keep this in sync with THIRD-PARTY-LICENSES.
+[licenses]
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "CC0-1.0",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "Zlib",
+  "MPL-2.0",
+]

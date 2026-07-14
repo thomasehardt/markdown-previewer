@@ -36,12 +36,12 @@ requirement to the implementation plan in `docs/design.md` section 9.
 | ID | Requirement | Status |
 |---|---|---|
 | NFR1 | Offline only at runtime: zero network calls; all rendering assets embedded in the binary. | Done for shipped scope; enforced by an offline-URL scan test |
-| NFR2 | Cross-platform: macOS, Linux, Windows. | macOS verified; Linux/Windows designed, not yet CI-tested |
+| NFR2 | Cross-platform: macOS, Linux, Windows. | macOS verified end to end; Linux/Windows build + test in CI (GitHub Actions matrix), not yet exercised at runtime |
 | NFR3 | Single binary where the OS allows (macOS, Windows). Linux carries a documented `libwebkit2gtk` runtime dependency with graceful fallback to the serve frontend. | Done (automatic webview->serve fallback wired); Linux single-binary caveat documented |
 | NFR4 | Fast launch: something visibly happens immediately on start. | Done (instant spinner) |
 | NFR5 | MIT licensed; every shipped dependency license-compatible (MIT/Apache-2.0/BSD/ISC/CC0/Unicode/OFL). | Done; `cargo-deny` CI gate Planned |
 | NFR6 | Implemented in Rust with a pinned toolchain (`rust-toolchain.toml`) for reproducible builds. | Done (Rust 1.97.0) |
-| NFR7 | Reasonable 100% test coverage on core logic (skip trivial glue like getters/setters); the coverage gate runs on `mdp-core`. | Done (~96% region/line on `mdp-core`); maintained each phase |
+| NFR7 | Reasonable 100% test coverage on core logic (skip trivial glue like getters/setters); the coverage gate runs on `mdp-core`. | Partial: the render pipeline is exercised by 46 core tests, but raw `mdp-core` line coverage is ~71% (lib.rs ~68%, watch.rs ~91%), depressed by derive/HTML-assembly boilerplate. It slipped during the feature batch (not re-measured each step). CI floor is 65 as a regression guard; raising it is a backlog item. |
 | NFR8 | Elegant, modern visual design. Neutral default theme; no company branding baked into the shipped tool. | Done (semantic-token theme, neutral default) |
 | NFR9 | Security: untrusted Markdown HTML is sanitized (ammonia allowlist); no script execution from document content; read-only. | Done (sanitization corpus test) |
 | NFR10 | No Docker. User-local, reproducible install (rustup toolchain + Cargo). | Done |
@@ -60,8 +60,9 @@ Tracked work that is deliberately not done yet:
    margins; the planned Windows (`WebView2.PrintToPdf`) and Linux (WebKitGTK
    `PrintOperation`) paths already paginate, so macOS is the outlier. Until then,
    treat PDF export as preview-quality only.
-2. **Windows and Linux support**, including building and testing on those
-   platforms (CI).
+2. **Windows and Linux runtime support.** CI now builds and tests the workspace
+   on Linux and Windows, but the webview/serve frontends are not yet exercised
+   at runtime there (Linux needs libwebkit2gtk; native PDF is macOS-only).
 3. **Freeze diagrams to static SVG** in HTML/PDF export (needs a browser engine
    at export time) so an export does not depend on JS running on open.
 4. **Test documentation code snippets** as part of the build.
@@ -69,6 +70,10 @@ Tracked work that is deliberately not done yet:
    cargo-dist and GitHub Releases) and a Homebrew formula, so users need not
    build from source. Depends on the Windows/Linux work. `scripts/install.sh`
    (`cargo install` from source) covers local installs today.
+6. **Raise `mdp-core` coverage** toward the reasonable-100% bar. It slipped to
+   ~71% line during the feature batch (HTML-assembly branches and the growing
+   set of derived data types are undertested); the render pipeline itself is
+   covered. Re-measure coverage per change going forward.
 
 ## How this list is maintained
 

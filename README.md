@@ -128,6 +128,13 @@ adversarial sanitization corpus (script/`javascript:`/handler/iframe stripped
 while task lists, alerts, footnotes, and code-language classes survive), and
 `RenderOptions` behavior.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` builds and tests on Linux, macOS, and Windows, and
+runs `rustfmt`, `clippy -D warnings`, an `mdp-core` coverage floor, and a
+`cargo-deny` license gate. The Linux jobs install `libwebkit2gtk` for the
+webview frontend.
+
 ## Theming
 
 Visual identity is a theme layer, not hardcoded style. The layout and prose CSS
