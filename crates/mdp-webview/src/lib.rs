@@ -360,9 +360,10 @@ impl std::error::Error for FrontendError {}
 /// KaTeX have finished), then capture silently via `WKWebView.createPDF`. A
 /// timed fallback captures even if the signal never arrives.
 ///
-/// Known behavior (design 4.5): createPDF produces a single tall page, not
-/// paginated to Letter/A4, and the window briefly appears during capture.
-/// Windows/Linux native PDF are not yet implemented.
+/// `createPDF` yields one page as tall as the whole document. The webview is laid
+/// out at US Letter WIDTH so the capture is Letter-wide, then `mdp_core::pdf`
+/// paginates that tall page into Letter-height pages before writing. The window
+/// briefly appears during capture. Windows/Linux native PDF are not yet done.
 #[cfg(target_os = "macos")]
 pub fn export_pdf(doc: &RenderedDoc, out: &Path) -> Result<(), FrontendError> {
     use std::cell::RefCell;
@@ -378,6 +379,12 @@ pub fn export_pdf(doc: &RenderedDoc, out: &Path) -> Result<(), FrontendError> {
     use objc2_foundation::{MainThreadMarker, NSData, NSError};
     use objc2_web_kit::WKPDFConfiguration;
 
+    // US Letter portrait, in PDF points (72pt = 1in). Laying the capture out at
+    // this width makes createPDF produce a Letter-wide tall page, which pagination
+    // then slices into Letter-tall pages.
+    const LETTER_WIDTH_PT: f64 = 612.0;
+    const LETTER_HEIGHT_PT: f32 = 792.0;
+
     enum PdfEvent {
         Capture,
         Done(Result<usize, String>),
@@ -391,7 +398,7 @@ pub fn export_pdf(doc: &RenderedDoc, out: &Path) -> Result<(), FrontendError> {
 
     let window = WindowBuilder::new()
         .with_title("mdp export")
-        .with_inner_size(tao::dpi::LogicalSize::new(900.0, 1200.0))
+        .with_inner_size(tao::dpi::LogicalSize::new(LETTER_WIDTH_PT, 792.0))
         .build(&event_loop)
         .map_err(|e| FrontendError::Window(e.to_string()))?;
 
@@ -432,7 +439,7 @@ pub fn export_pdf(doc: &RenderedDoc, out: &Path) -> Result<(), FrontendError> {
                 let mtm = MainThreadMarker::new().expect("event loop runs on the main thread");
                 let wk = webview.webview();
                 // A nil-equivalent configuration captures the full page as one
-                // tall page; createPDF does not paginate (design 4.5).
+                // tall page; mdp_core::pdf then paginates it below.
                 let config = unsafe { WKPDFConfiguration::new(mtm) };
                 let done_proxy = proxy.clone();
                 let out_for_block = out_path.clone();
@@ -446,8 +453,18 @@ pub fn export_pdf(doc: &RenderedDoc, out: &Path) -> Result<(), FrontendError> {
                         Err("createPDF returned neither data nor error".to_string())
                     } else {
                         let bytes = unsafe { &*data }.to_vec();
-                        match std::fs::write(&out_for_block, &bytes) {
-                            Ok(()) => Ok(bytes.len()),
+                        // Slice the single tall page into Letter-height pages before
+                        // writing. If pagination somehow fails, fall back to the raw
+                        // capture so the user still gets a (single-page) PDF.
+                        let out_bytes = match mdp_core::pdf::paginate(&bytes, LETTER_HEIGHT_PT) {
+                            Ok(paged) => paged,
+                            Err(e) => {
+                                eprintln!("mdp: PDF pagination failed ({e}); wrote unpaginated");
+                                bytes
+                            }
+                        };
+                        match std::fs::write(&out_for_block, &out_bytes) {
+                            Ok(()) => Ok(out_bytes.len()),
                             Err(e) => Err(format!("write failed: {e}")),
                         }
                     };

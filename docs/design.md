@@ -78,6 +78,7 @@ One answer per decision. Where the research findings disagreed, the reconciliati
 | Diagrams | Mermaid (bundled full UMD build) | 11.16.0 | MIT | Only viable offline diagram engine; render in-page and extract SVG for export. |
 | Native webview | `wry` + `tao` | wry 0.55.1 | MIT OR Apache-2.0 | Custom protocol for offline assets, IPC handler, exposes native handles for print-to-PDF. Uses the OS engine, so nothing is bundled on macOS/Windows. |
 | macOS PDF FFI | `objc2` + `objc2-web-kit` | current | MIT OR Apache-2.0 | `WKWebView.createPDF` (macOS 11+), dialog-free. |
+| PDF pagination | `lopdf` (no default features) | 0.44.0 | MIT OR Apache-2.0 | Pure-Rust; windows the tall capture into Letter pages by MediaBox (design 4.5). Platform-free, so it lives in the core and is unit-tested. |
 | Windows PDF FFI | `webview2-com` + `windows` | current | MIT OR Apache-2.0 | `ICoreWebView2_7::PrintToPdf`, paginated, dialog-free. |
 | Linux PDF FFI | `webkit2gtk` (binding) | current | MIT | `PrintOperation` with output-uri, paginated, dialog-free. |
 | File watching | `notify` + `notify-debouncer-full` | notify 8.2.0, debouncer 0.7.0 | CC0-1.0 / MIT OR Apache-2.0 | Cross-platform; debouncer stitches rename events and coalesces the save-event storm. Depend on the debouncer and use its re-exported `notify`. |
@@ -140,7 +141,7 @@ PDF is the hardest requirement because rendered Mermaid and KaTeX need a live JS
 
 | Platform | Handle | API | Notes |
 |---|---|---|---|
-| macOS | `WebViewExtMacOS::webview()` (WKWebView subclass) | `createPDFWithConfiguration:completionHandler:` via objc2 | Easiest; a few lines. Captures as one tall page unless `WKPDFConfiguration.rect` is set; does not auto-paginate to Letter/A4. |
+| macOS | `WebViewExtMacOS::webview()` (WKWebView subclass) | `createPDFWithConfiguration:completionHandler:` via objc2, then `mdp_core::pdf::paginate` | Captures one tall page (Letter width), then windows it into Letter pages in pure Rust. See "Pagination" below. |
 | Windows | `WebViewExtWindows::controller()` -> `ICoreWebView2_7` | `PrintToPdf(path, settings, handler)` via webview2-com | Async; pump completion on the message loop. Paginates and honors margins/orientation/background. |
 | Linux | `WebViewExtUnix::webview()` (webkit2gtk WebView) | `PrintOperation` with output-uri `file:///abs.pdf`, output-format `pdf` | Runs with no dialog. Paginates. |
 
@@ -148,7 +149,7 @@ PDF is the hardest requirement because rendered Mermaid and KaTeX need a live JS
 
 **Fallback.** If a platform's FFI path proves problematic, fall back to wry's built-in `WebView::print()` and let the user pick "Save as PDF" / "Microsoft Print to PDF" / print-to-file. It works everywhere today with zero FFI; it is simply not one-click. We ship the FFI path as primary and keep `print()` wired as the guaranteed fallback.
 
-**Pagination is not uniform.** macOS `createPDF` yields one tall page; Windows and Linux paginate. We normalize as far as a print stylesheet (`@page`) allows and accept that macOS single-page output may differ until (or unless) we invest in the harder `NSPrintOperation` route. This is called out as a spike, not assumed solved.
+**Pagination (macOS, solved).** `createPDF` yields one page as tall as the whole document. The obvious "fix", `NSPrintOperation` on the wry WKWebView, was tried and abandoned: in an off-screen tao window it runs away to an unbounded page count regardless of paper size, margins, or pagination mode (verified against a trivial one-line document, so it is not content-driven). Instead we keep the reliable `createPDF` capture and paginate the bytes in pure Rust: `mdp_core::pdf::paginate` (lopdf) creates N pages that each reference the SAME content stream and resources but carry a `MediaBox` windowing one Letter-height band. Nothing is re-rasterized, so text stays selectable and vector art stays sharp. The capture is laid out at Letter WIDTH (612pt) so pages are true US Letter, and the CLI appends export CSS that wraps wide code/tables so nothing clips at the page edge. Because this logic is platform-free bytes-in/bytes-out, it lives in the core and is unit-tested (synthetic tall page -> asserted MediaBoxes). Windows and Linux paginate natively when implemented.
 
 **PDF is out of scope for core coverage.** The testable deterministic unit is "produce the correct self-contained HTML the engine will print." That we snapshot. PDF fidelity is an integration test behind the `webview` feature.
 

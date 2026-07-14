@@ -23,6 +23,7 @@
 //! The [`watch`] submodule adds cross-platform file watching (design section
 //! 4.3); it is the one stateful, I/O-touching part of this otherwise pure crate.
 
+pub mod pdf;
 pub mod watch;
 
 use std::borrow::Cow;

@@ -346,6 +346,33 @@ fn run_export(
     }
 }
 
+/// CSS appended when rendering for PDF capture. The capture is a fixed-width
+/// page, so anything that scrolls horizontally on screen (long code lines, wide
+/// tables) would clip at the page edge; wrap it instead. The leading `html`
+/// raises specificity so these rules win over the shell stylesheet regardless of
+/// where the extra CSS is injected in the page.
+#[cfg(feature = "webview")]
+const PAGED_EXPORT_CSS: &str = "\
+/* mdp PDF export: wrap wide content so nothing is clipped at the page edge. */\n\
+html .mdp-document pre,\n\
+html .mdp-document pre code { white-space: pre-wrap; overflow-wrap: anywhere; }\n\
+html .mdp-document table { display: table; width: 100%; table-layout: fixed; }\n\
+html .mdp-document th,\n\
+html .mdp-document td { overflow-wrap: anywhere; }\n";
+
+/// Append the paged-export CSS to any theme CSS already in effect.
+#[cfg(feature = "webview")]
+fn with_paged_css(theme_css: Option<String>) -> String {
+    match theme_css {
+        Some(mut css) => {
+            css.push('\n');
+            css.push_str(PAGED_EXPORT_CSS);
+            css
+        }
+        None => PAGED_EXPORT_CSS.to_string(),
+    }
+}
+
 /// Render `file` without interactive chrome and capture it to a PDF at `out`.
 #[cfg(feature = "webview")]
 fn export_pdf_file(
@@ -364,7 +391,7 @@ fn export_pdf_file(
     let opts = RenderOptions {
         title: file.file_name().map(|n| n.to_string_lossy().into_owned()),
         color_scheme: scheme,
-        extra_theme_css,
+        extra_theme_css: Some(with_paged_css(extra_theme_css)),
         view_source_default: false,
         show_chrome: false,
         file_nav: Vec::new(),
@@ -477,6 +504,22 @@ mod tests {
     #[test]
     fn cli_definition_is_internally_consistent() {
         Cli::command().debug_assert();
+    }
+
+    #[cfg(feature = "webview")]
+    #[test]
+    fn paged_css_appends_and_preserves_theme() {
+        // With no theme, the paged CSS stands alone.
+        let only = with_paged_css(None);
+        assert!(only.contains("white-space: pre-wrap"));
+        assert_eq!(only, PAGED_EXPORT_CSS);
+
+        // With a theme, the theme comes first and the paged rules follow.
+        let combined = with_paged_css(Some(":root{--accent:#abc}".to_string()));
+        assert!(combined.starts_with(":root{--accent:#abc}"));
+        assert!(combined.contains("white-space: pre-wrap"));
+        // The wrap rules are `html`-qualified so they win over the shell CSS.
+        assert!(combined.contains("html .mdp-document pre"));
     }
 
     #[test]

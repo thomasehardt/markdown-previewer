@@ -20,6 +20,7 @@ syntect = { version = "5.3.0", default-features = false, features = ["default-fa
 # re-exported `notify` to avoid a version skew; the debouncer coalesces the
 # save-event storm and stitches the atomic-rename dance editors use.
 notify-debouncer-full = "0.7"
+lopdf = { version = "0.44.0", default-features = false }
 
 [dev-dependencies]
 # Review-friendly HTML snapshots; filters redact the large inlined asset blobs

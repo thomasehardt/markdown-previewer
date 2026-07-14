@@ -67,11 +67,19 @@ not yet pre-frozen to static SVG (that would need a browser engine at export
 time).
 
 Exporting to a `.pdf` path captures a high-fidelity vector PDF on macOS: it
-renders the document in a webview, waits for the render-complete signal (so
-Mermaid and KaTeX, including web fonts, have finished), then captures silently
-via `WKWebView.createPDF`. A window appears briefly during capture, and the
-output is a single tall page (macOS `createPDF` does not paginate to Letter/A4).
-Windows and Linux each need their own native path and are not yet implemented.
+renders the document in a webview (laid out at US Letter width), waits for the
+render-complete signal (so Mermaid and KaTeX, including web fonts, have
+finished), then captures silently via `WKWebView.createPDF`. That capture is one
+tall page, which `mdp` then paginates into US Letter pages before writing.
+Text stays selectable and diagrams stay vector-sharp (nothing is re-rasterized).
+Long code lines and wide tables are wrapped for export so they never clip at the
+page edge. A window appears briefly during capture. Windows and Linux each need
+their own native path and are not yet implemented.
+
+Two cosmetic notes: in a dark color scheme the blank space below the content on
+the last page shows as white (the capture is only as tall as the content), and
+page breaks fall at fixed heights rather than at semantic boundaries. Export in a
+light scheme (or the default) for the cleanest printed result.
 
 ## Authoring a theme
 

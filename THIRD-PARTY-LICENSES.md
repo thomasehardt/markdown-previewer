@@ -16,9 +16,10 @@ the required notices even though the asset bytes are gitignored.
 | Mermaid | 11.16.0 | MIT | `mermaid.min.js` (prebuilt UMD bundle) |
 | comrak | 0.54.0 | BSD-2-Clause (+ bundled cmark-gfm derivations) | Rust dependency, compiled in |
 
-Other Rust dependencies (ammonia, rust-embed, and their transitive trees) are
-MIT or MIT OR Apache-2.0; the authoritative check on the full transitive tree
-is `cargo-deny` in CI (design section 5/7), not this file.
+Other Rust dependencies (ammonia, rust-embed, lopdf for PDF pagination, and
+their transitive trees) are MIT or MIT OR Apache-2.0; the authoritative check on
+the full transitive tree is `cargo-deny` in CI (design section 5/7), not this
+file.
 
 ---
 
