@@ -161,6 +161,11 @@ fn main() -> ExitCode {
         _ => (cli.files.clone(), Action::Webview),
     };
 
+    // Expand directory arguments to the Markdown files inside (one level,
+    // sorted), so `mdp docs/` -- or a glob that includes folders -- opens each
+    // file as a switchable tab. Plain file arguments are kept as given.
+    let files = expand_inputs(&files);
+
     let Some(first) = files.first() else {
         eprintln!("mdp: no input file given. Try `mdp <FILE>` or `mdp --help`.");
         return ExitCode::from(2);
@@ -245,6 +250,45 @@ fn file_label(path: &Path) -> String {
     path.file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string())
+}
+
+/// Expand directory arguments to the Markdown files they contain (one level,
+/// sorted); plain file arguments are kept as-is. Lets `mdp docs/` and globs
+/// that include folders open every file rather than erroring on a directory.
+fn expand_inputs(paths: &[PathBuf]) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for path in paths {
+        if path.is_dir() {
+            match std::fs::read_dir(path) {
+                Ok(entries) => {
+                    let mut markdown: Vec<PathBuf> = entries
+                        .filter_map(|entry| entry.ok().map(|e| e.path()))
+                        .filter(|p| p.is_file() && is_markdown(p))
+                        .collect();
+                    markdown.sort();
+                    if markdown.is_empty() {
+                        eprintln!("mdp: no Markdown files in {}", path.display());
+                    }
+                    out.extend(markdown);
+                }
+                Err(e) => eprintln!("mdp: cannot read directory {}: {e}", path.display()),
+            }
+        } else {
+            out.push(path.clone());
+        }
+    }
+    out
+}
+
+/// Whether a path has a Markdown-ish extension.
+fn is_markdown(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .as_deref(),
+        Some("md" | "markdown" | "mdown" | "mkd" | "mkdn" | "mdwn")
+    )
 }
 
 /// Headless export (design section 4.4/4.5). `.html` writes a self-contained
@@ -566,5 +610,38 @@ mod tests {
             !out.exists(),
             "no output should be written for an unsupported target"
         );
+    }
+
+    #[test]
+    fn expand_inputs_keeps_files_and_expands_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("b.md"), "b").unwrap();
+        std::fs::write(root.join("a.md"), "a").unwrap();
+        std::fs::write(root.join("note.txt"), "x").unwrap();
+        std::fs::create_dir(root.join("sub")).unwrap();
+
+        // A plain file argument is kept as given.
+        let file = root.join("a.md");
+        assert_eq!(
+            expand_inputs(std::slice::from_ref(&file)),
+            vec![file.clone()]
+        );
+
+        // A directory expands to its Markdown files, sorted; the .txt file and
+        // the subdirectory are excluded.
+        let names: Vec<String> = expand_inputs(&[root.to_path_buf()])
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["a.md".to_string(), "b.md".to_string()]);
+    }
+
+    #[test]
+    fn is_markdown_matches_common_extensions() {
+        assert!(is_markdown(Path::new("x.md")));
+        assert!(is_markdown(Path::new("X.MARKDOWN")));
+        assert!(!is_markdown(Path::new("x.txt")));
+        assert!(!is_markdown(Path::new("x")));
     }
 }

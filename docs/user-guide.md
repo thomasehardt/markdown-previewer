@@ -43,6 +43,12 @@ preview:
 mdp intro.md setup.md
 ```
 
+Or point at a folder to open every Markdown file inside it, one tab each:
+
+```sh
+mdp docs/
+```
+
 ## Choosing light or dark
 
 By default `mdp` follows your operating system's light/dark setting. To force

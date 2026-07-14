@@ -124,7 +124,9 @@ omitted from exports.
 ## Multiple files
 
 Pass several files (`mdp a.md b.md ...`, or `mdp serve a.md b.md`) and the
-preview shows a file switcher bar. Selecting a file renders it (by index over
+preview shows a file switcher bar. A directory argument (`mdp docs/`) expands to
+the Markdown files inside it (one level, sorted), and a glob that includes
+folders expands them too. Selecting a file renders it (by index over
 the frontend's URL: `?doc=N` for serve, `?n=N` over the webview's custom
 protocol); all passed files are watched, so a change to any of them offers a
 reload. Export still takes a single file.
