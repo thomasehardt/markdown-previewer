@@ -20,7 +20,7 @@ requirement to the implementation plan in `docs/design.md` section 9.
 | FR6 | The preview is read-only (no editing affordances). | 1 | Done |
 | FR7 | A read-only "view source" toggle showing the raw Markdown. | 4 | Done (button or press `s`) |
 | FR8 | Export to a single self-contained HTML file (offline, diagrams and math preserved). | 6 | Done (renders on open; static-SVG freezing is a later option) |
-| FR9 | Export to PDF (offline, diagrams and math preserved). | 7 | Done on macOS (silent WKWebView createPDF; waits for render-complete + fonts; single tall page); Windows/Linux planned |
+| FR9 | Export to PDF (offline, diagrams and math preserved). | 7 | Partial: macOS captures a vector PDF via WKWebView createPDF, but as a single tall page (not paginated to Letter/A4), which is not acceptable for real use. Proper pagination is DEFERRED (see Deferred tasks). Windows/Linux planned. |
 | FR10 | Watch tracked file(s); on change, show a non-intrusive reload prompt. Never auto-swap the reader's view. | 5 | Done (parent-dir watch, ~300ms debounce, banner; `--no-watch`) |
 | FR11 | Instant launch feedback: a window/tab with a loading state appears immediately, then content swaps in. | 1 | Done (spinner shell) |
 | FR12 | Callable by other tools (including Claude Code) to display Markdown headlessly (serve on an ephemeral port; print the URL). | 3 | Done |
@@ -46,6 +46,27 @@ requirement to the implementation plan in `docs/design.md` section 9.
 | NFR11 | Repo hygiene: no large or binary asset blobs committed to git; third-party front-end assets are fetched by a pinned, checksummed vendor script. | Done (`scripts/vendor-assets.sh`, gitignored assets) |
 | NFR12 | Maintained documentation: this requirements list, general user docs, power-user docs, and an always-current README. | Ongoing |
 | NFR13 | Authoring style for all project prose: straight quotes and regular hyphens only, American spelling. | Ongoing |
+
+## Deferred tasks (backlog)
+
+Tracked work that is deliberately not done yet:
+
+1. **PDF pagination (priority).** macOS PDF export currently produces a single
+   tall page: `WKWebView.createPDF` does not paginate. A single tall page is not
+   acceptable for real use. Fix: on macOS, switch to the `NSPrintOperation` /
+   print-to-PDF path, which paginates to a paper size (Letter/A4) and honors
+   margins; the planned Windows (`WebView2.PrintToPdf`) and Linux (WebKitGTK
+   `PrintOperation`) paths already paginate, so macOS is the outlier. Until then,
+   treat PDF export as preview-quality only.
+2. **Windows and Linux support**, including building and testing on those
+   platforms (CI).
+3. **Freeze diagrams to static SVG** in HTML/PDF export (needs a browser engine
+   at export time) so an export does not depend on JS running on open.
+4. **Test documentation code snippets** as part of the build.
+5. **Distributable install**: prebuilt cross-platform binaries (e.g. via
+   cargo-dist and GitHub Releases) and a Homebrew formula, so users need not
+   build from source. Depends on the Windows/Linux work. `scripts/install.sh`
+   (`cargo install` from source) covers local installs today.
 
 ## How this list is maintained
 

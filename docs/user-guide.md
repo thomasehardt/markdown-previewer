@@ -4,18 +4,28 @@
 view in a native window. This guide covers everyday use. For theming, the config
 file, and the full CLI, see the [power-user guide](power-user-guide.md).
 
-## Getting it built
+## Installing it
 
-`mdp` is a Rust program. From a checkout:
+`mdp` is a Rust program (it needs a Rust toolchain via rustup). From a checkout,
+install the `mdp` command to `~/.cargo/bin`:
 
 ```sh
-./scripts/vendor-assets.sh   # one-time: fetch the offline math/diagram assets
+./scripts/install.sh
+```
+
+That fetches the offline math/diagram assets once (KaTeX and Mermaid, so the
+tool works with no network afterward) and installs the binary. Make sure
+`~/.cargo/bin` is on your PATH.
+
+To build without installing:
+
+```sh
+./scripts/vendor-assets.sh
 cargo build --release        # produces target/release/mdp
 ```
 
-The first step downloads KaTeX and Mermaid once so the tool can render math and
-diagrams with no network access afterward. If you skip it, everything else still
-works; math and diagrams just show their source text until you run it.
+If you skip the asset step, everything else still works; math and diagrams just
+show their source text until you run it.
 
 ## Previewing a file
 

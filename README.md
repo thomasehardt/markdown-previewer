@@ -85,6 +85,25 @@ cargo run -p mdp-cli -- --theme my-theme.css README.md
 Without the vendor step the tool still builds and runs; math and diagrams
 simply fall back to their source text until the assets are present.
 
+## Install
+
+To install the `mdp` command to `~/.cargo/bin` (needs a Rust toolchain via
+rustup):
+
+```sh
+./scripts/install.sh
+```
+
+That vendors the offline assets and runs `cargo install --path crates/mdp-cli`.
+Ensure `~/.cargo/bin` is on your PATH, then:
+
+```sh
+mdp <file.md>
+```
+
+Prebuilt cross-platform binaries and a Homebrew formula are a later step, tied
+to the Windows/Linux support in the [requirements backlog](docs/requirements.md).
+
 ## Test and coverage
 
 Coverage concentrates in `mdp-core`, where the logic is a pure string-to-string
