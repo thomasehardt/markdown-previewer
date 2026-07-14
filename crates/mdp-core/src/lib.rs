@@ -448,14 +448,17 @@ fn assemble_page(body: &str, source_md: &str, title: &str, opts: &RenderOptions)
             None => (String::new(), ""),
         };
         format!(
-            "{files_bar}<div id=\"mdp-reload-banner\" class=\"mdp-reload-banner\" role=\"status\" hidden>This file changed on disk. <button type=\"button\" id=\"mdp-reload-accept\">Reload</button> <button type=\"button\" id=\"mdp-reload-dismiss\">Dismiss</button></div>\n\
+            "<div id=\"mdp-reload-banner\" class=\"mdp-reload-banner\" role=\"status\" hidden>This file changed on disk. <button type=\"button\" id=\"mdp-reload-accept\">Reload</button> <button type=\"button\" id=\"mdp-reload-dismiss\">Dismiss</button></div>\n\
 {toc_nav}\
-<div class=\"mdp-toolbar\" role=\"toolbar\" aria-label=\"Preview settings\">\
+<div class=\"mdp-topbar\">\
+{files_bar}\
+<div class=\"mdp-controls\" role=\"toolbar\" aria-label=\"Preview settings\">\
 {contents_btn}\
 <label class=\"mdp-ctl\">Theme <select id=\"mdp-theme\"><option value=\"default\">Default</option><option value=\"sepia\">Sepia</option><option value=\"slate\">Slate</option></select></label>\
 <label class=\"mdp-ctl\">Scheme <select id=\"mdp-scheme\"><option value=\"auto\">Auto</option><option value=\"light\">Light</option><option value=\"dark\">Dark</option></select></label>\
 <label class=\"mdp-ctl\">Width <select id=\"mdp-width\"><option value=\"comfortable\">Comfortable</option><option value=\"wide\">Wide</option><option value=\"full\">Full</option></select></label>\
 <button type=\"button\" id=\"mdp-view-toggle\" class=\"mdp-view-toggle\" aria-pressed=\"false\">View source</button>\
+</div>\
 </div>\n"
         )
     } else {

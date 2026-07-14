@@ -191,27 +191,27 @@ body {
 /* Floating settings toolbar: theme / color-scheme / reading-width selects plus
  * the view-source toggle (design 4.2/4.6). Part of the interactive chrome, so
  * it is omitted from an export (show_chrome off). Token-driven throughout. */
-.mdp-toolbar {
-  position: fixed;
-  top: var(--space-3);
-  right: var(--space-3);
-  z-index: 10;
+.mdp-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  box-sizing: border-box;
+  height: 2.75rem;
   display: flex;
-  gap: var(--space-3);
   align-items: center;
-  padding: var(--space-1) var(--space-3);
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
   background: var(--surface-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.18);
+  border-bottom: 1px solid var(--border);
   font-family: var(--font-body);
   font-size: 0.8rem;
-  opacity: 0.72;
-  transition: opacity 0.15s ease;
 }
-.mdp-toolbar:hover,
-.mdp-toolbar:focus-within {
-  opacity: 1;
+.mdp-controls {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
 }
 .mdp-ctl {
   display: inline-flex;
@@ -219,7 +219,7 @@ body {
   align-items: center;
   color: var(--text-muted);
 }
-.mdp-toolbar select,
+.mdp-controls select,
 .mdp-view-toggle {
   font-family: var(--font-body);
   font-size: 0.8rem;
@@ -268,7 +268,7 @@ body.mdp-view-source-active .mdp-source {
 .mdp-reload-banner {
   position: fixed;
   left: 50%;
-  top: var(--space-3);
+  top: calc(2.75rem + var(--space-2));
   transform: translateX(-50%);
   z-index: 20;
   display: flex;
@@ -318,9 +318,9 @@ body.mdp-view-source-active .mdp-source {
   display: none;
   position: fixed;
   left: 0;
-  top: 0;
+  top: 2.75rem;
   width: 16rem;
-  height: 100vh;
+  height: calc(100vh - 2.75rem);
   overflow-y: auto;
   padding: var(--space-4) var(--space-3);
   background: var(--surface-sunken);
@@ -368,17 +368,18 @@ body.mdp-toc-open {
 /* Multi-file switcher bar: a top strip of file tabs, shown for two or more
  * files. Token-driven; the current file is highlighted. */
 .mdp-files {
-  background: var(--surface-sunken);
-  border-bottom: 1px solid var(--border);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
   font-size: 0.85rem;
 }
 .mdp-files ul {
   list-style: none;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: var(--space-1);
   margin: 0;
-  padding: var(--space-1) var(--space-3);
+  padding: 0;
 }
 .mdp-file a {
   display: inline-block;
