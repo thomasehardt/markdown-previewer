@@ -120,6 +120,12 @@ pub struct RenderOptions {
     /// Multi-file navigation entries. With two or more (and chrome shown), a
     /// file switcher bar is rendered. Empty for a single file.
     pub file_nav: Vec<NavItem>,
+    /// PDF export mode: `Some((width_pt, height_pt))` runs paged.js in the page
+    /// to reflow content into real page boxes (honoring `break-inside`, adding
+    /// `@page` margins) before capture, so a sliced page never cuts an element.
+    /// The dimensions are in PDF points, used verbatim as CSS px because the
+    /// macOS capture maps 1px to 1pt (design 4.5). `None` for on-screen preview.
+    pub page_dimensions: Option<(f32, f32)>,
 }
 
 impl Default for RenderOptions {
@@ -131,6 +137,7 @@ impl Default for RenderOptions {
             view_source_default: false,
             show_chrome: true,
             file_nav: Vec::new(),
+            page_dimensions: None,
         }
     }
 }
@@ -428,6 +435,16 @@ fn assemble_page(body: &str, source_md: &str, title: &str, opts: &RenderOptions)
         }
     }
 
+    // PDF export: paginate with paged.js. The config + @page CSS go in the head;
+    // the library loads at body end (after Mermaid, before the shell script that
+    // triggers it). Absent vendored bundle -> unpaginated flow, not a failure.
+    if let Some((page_w, page_h)) = opts.page_dimensions {
+        if let Some(lib) = paged_library() {
+            head_extra.push_str(&paged_head(page_w, page_h));
+            body_extra.push_str(lib);
+        }
+    }
+
     let body_class = if opts.view_source_default {
         " class=\"mdp-view-source-active\""
     } else {
@@ -700,6 +717,42 @@ fn mermaid_assets() -> Option<&'static str> {
         .as_deref()
 }
 
+/// The paged.js polyfill library, built once, for PDF export only. Returns
+/// `None` when the vendored bundle is absent (a checkout that has not run
+/// scripts/vendor-assets.sh), so export falls back to unpaginated flow rather
+/// than failing. Loaded with `auto:false` (see [`paged_head`]) so the shell
+/// runs it after math/diagrams have rendered.
+fn paged_library() -> Option<&'static str> {
+    static BLOCK: OnceLock<Option<String>> = OnceLock::new();
+    BLOCK
+        .get_or_init(|| {
+            let js = try_load_asset("vendor/pagedjs/paged.polyfill.js")?;
+            Some(format!("<script data-mdp=\"pagedjs\">{js}</script>\n"))
+        })
+        .as_deref()
+}
+
+/// The `<head>` block for paged export: it configures paged.js not to auto-run
+/// (the shell triggers it after rendering), declares the `@page` box for the
+/// chosen paper size (dimensions in px, which the macOS capture maps 1:1 to pt),
+/// and neutralizes both paged.js's on-screen page gaps and the document's own
+/// card box so each captured page is a clean, gap-free sheet.
+fn paged_head(width_px: f32, height_px: f32) -> String {
+    // Page margin in px (== pt after capture). ~0.6in, a conventional print edge.
+    const MARGIN_PX: f32 = 44.0;
+    format!(
+        "<script data-mdp=\"paged-config\">window.PagedConfig={{auto:false}};window.__mdpPaged=true;</script>\n\
+<style data-mdp=\"paged\">\
+@page{{size:{width_px}px {height_px}px;margin:{MARGIN_PX}px;}}\
+.pagedjs_pages{{display:block;}}\
+.pagedjs_page{{margin:0 !important;box-shadow:none !important;background:var(--surface-card);}}\
+.mdp-document{{max-width:none !important;margin:0 !important;padding:0 !important;border:none !important;background:transparent !important;min-height:0 !important;}}\
+.mdp-document pre,.mdp-document table,.mdp-document blockquote,.mdp-document .markdown-alert,.mdp-document figure,.mdp-document .mermaid,.mdp-document img{{break-inside:avoid;}}\
+.mdp-document h1,.mdp-document h2,.mdp-document h3,.mdp-document h4,.mdp-document h5,.mdp-document h6{{break-after:avoid;}}\
+</style>\n"
+    )
+}
+
 /// Load an embedded text asset. Panics only if a compiled-in asset is missing,
 /// which is a build/packaging bug, not a runtime input error.
 fn load_asset(name: &str) -> Cow<'static, str> {
@@ -960,6 +1013,7 @@ mod tests {
             extra_theme_css: Some(":root{--accent:#123456}".to_string()),
             view_source_default: true,
             show_chrome: true,
+            page_dimensions: None,
             file_nav: vec![
                 NavItem {
                     label: "a".into(),
@@ -1018,6 +1072,33 @@ mod tests {
         let _ = format!("{:?}", item.clone());
         let doc = render_document("hi", &opts);
         let _ = format!("{:?}", doc.clone());
+    }
+
+    #[test]
+    fn paged_export_injects_pagedjs_only_when_requested() {
+        // On-screen preview never carries the paged-export machinery. (The
+        // shell script always references window.__mdpPaged to test it, so check
+        // for the config assignment and the library, which are paged-only.)
+        let preview = render_document("# Hi\n\nsome text", &RenderOptions::default());
+        assert!(!preview.html.contains("window.__mdpPaged=true"));
+        assert!(!preview.html.contains("data-mdp=\"pagedjs\""));
+        assert!(!preview.html.contains("@page"));
+
+        // Paged export injects the config marker, the @page box sized to the
+        // requested points, and the library - but only when the polyfill is
+        // vendored (skips on a fresh checkout, like the other asset tests).
+        if Assets::get("vendor/pagedjs/paged.polyfill.js").is_none() {
+            eprintln!("skipping paged assertions: paged.js not vendored yet");
+            return;
+        }
+        let opts = RenderOptions {
+            page_dimensions: Some((612.0, 792.0)),
+            ..Default::default()
+        };
+        let paged = render_document("# Hi\n\nsome text", &opts);
+        assert!(paged.html.contains("window.__mdpPaged=true"));
+        assert!(paged.html.contains("@page{size:612px 792px"));
+        assert!(paged.html.contains("data-mdp=\"pagedjs\""));
     }
 
     /// rust-embed reads `assets/` from disk in debug builds, so the gitignored

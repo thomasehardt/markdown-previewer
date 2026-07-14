@@ -30,6 +30,8 @@ set -euo pipefail
 # Mermaid: 11.16.0 (design section 3).
 KATEX_VERSION="0.16.47"
 MERMAID_VERSION="11.16.0"
+# paged.js: paginates the PDF-export capture into real page boxes (design 4.5).
+PAGEDJS_VERSION="0.4.3"
 CDN="https://cdn.jsdelivr.net/npm"
 
 # --- Paths -------------------------------------------------------------------
@@ -39,6 +41,7 @@ VENDOR_DIR="$REPO_ROOT/crates/mdp-core/assets/vendor"
 KATEX_DIR="$VENDOR_DIR/katex"
 KATEX_FONTS_DIR="$KATEX_DIR/fonts"
 MERMAID_DIR="$VENDOR_DIR/mermaid"
+PAGEDJS_DIR="$VENDOR_DIR/pagedjs"
 MANIFEST="$SCRIPT_DIR/assets-manifest.toml"
 
 REGENERATE=0
@@ -92,10 +95,10 @@ command -v curl   >/dev/null 2>&1 || die "curl is required"
 command -v python3 >/dev/null 2>&1 || die "python3 is required (for CSS font inlining)"
 
 # =============================================================================
-step "Vendoring KaTeX $KATEX_VERSION and Mermaid $MERMAID_VERSION"
+step "Vendoring KaTeX $KATEX_VERSION, Mermaid $MERMAID_VERSION, paged.js $PAGEDJS_VERSION"
 log  "vendor dir: $VENDOR_DIR"
 rm -rf "$VENDOR_DIR"
-mkdir -p "$KATEX_FONTS_DIR" "$MERMAID_DIR"
+mkdir -p "$KATEX_FONTS_DIR" "$MERMAID_DIR" "$PAGEDJS_DIR"
 
 # --- 1. Core files -----------------------------------------------------------
 step "Downloading core files"
@@ -105,6 +108,8 @@ fetch "$CDN/katex@$KATEX_VERSION/dist/katex.min.css" "$KATEX_DIR/katex.min.css"
 log "katex.min.css"
 fetch "$CDN/mermaid@$MERMAID_VERSION/dist/mermaid.min.js" "$MERMAID_DIR/mermaid.min.js"
 log "mermaid.min.js"
+fetch "$CDN/pagedjs@$PAGEDJS_VERSION/dist/paged.polyfill.js" "$PAGEDJS_DIR/paged.polyfill.js"
+log "paged.polyfill.js"
 
 # --- 2. Fonts (derived from the CSS, so we fetch exactly what it references) --
 step "Downloading KaTeX fonts referenced by katex.min.css"
@@ -123,7 +128,8 @@ log "fetched $FONT_COUNT woff2 fonts"
 # Ordered list of every fetched file, keyed by path relative to the vendor dir.
 FILES="katex/katex.min.js
 katex/katex.min.css
-mermaid/mermaid.min.js"
+mermaid/mermaid.min.js
+pagedjs/paged.polyfill.js"
 for font in $FONTS; do
     FILES="$FILES
 katex/fonts/$font"
@@ -140,6 +146,7 @@ write_manifest() {
         echo "[versions]"
         echo "katex = \"$KATEX_VERSION\""
         echo "mermaid = \"$MERMAID_VERSION\""
+        echo "pagedjs = \"$PAGEDJS_VERSION\""
         echo
         echo "[files]"
         for rel in $FILES; do
@@ -165,10 +172,13 @@ step "Verifying downloads against manifest"
 # Check the pinned versions still agree with this script.
 mf_katex="$(grep -E '^katex[[:space:]]*=' "$MANIFEST" | sed -E 's/.*"([^"]+)".*/\1/')"
 mf_mermaid="$(grep -E '^mermaid[[:space:]]*=' "$MANIFEST" | sed -E 's/.*"([^"]+)".*/\1/')"
+mf_pagedjs="$(grep -E '^pagedjs[[:space:]]*=' "$MANIFEST" | sed -E 's/.*"([^"]+)".*/\1/')"
 [ "$mf_katex" = "$KATEX_VERSION" ] \
     || die "manifest KaTeX version ($mf_katex) != script ($KATEX_VERSION); run --regenerate"
 [ "$mf_mermaid" = "$MERMAID_VERSION" ] \
     || die "manifest Mermaid version ($mf_mermaid) != script ($MERMAID_VERSION); run --regenerate"
+[ "$mf_pagedjs" = "$PAGEDJS_VERSION" ] \
+    || die "manifest paged.js version ($mf_pagedjs) != script ($PAGEDJS_VERSION); run --regenerate"
 
 VERIFIED=0
 for rel in $FILES; do

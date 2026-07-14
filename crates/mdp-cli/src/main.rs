@@ -277,6 +277,7 @@ impl DocSource for RenderSpec {
             view_source_default: self.view_source,
             show_chrome: true,
             file_nav,
+            page_dimensions: None,
         };
         render_document(&markdown, &opts)
     }
@@ -361,6 +362,7 @@ fn run_export(
                 view_source_default: view_source,
                 show_chrome: true,
                 file_nav: Vec::new(),
+                page_dimensions: None,
             };
             let doc = render_document(&markdown, &opts);
             match std::fs::write(out, &doc.html) {
@@ -427,6 +429,7 @@ fn export_pdf_file(
             return ExitCode::FAILURE;
         }
     };
+    let (width_pt, height_pt) = page_size.dimensions_pt();
     let opts = RenderOptions {
         title: file.file_name().map(|n| n.to_string_lossy().into_owned()),
         color_scheme: scheme,
@@ -434,9 +437,10 @@ fn export_pdf_file(
         view_source_default: false,
         show_chrome: false,
         file_nav: Vec::new(),
+        // paged.js reflows to the paper box before capture (design 4.5).
+        page_dimensions: Some((width_pt as f32, height_pt)),
     };
     let doc = render_document(&markdown, &opts);
-    let (width_pt, height_pt) = page_size.dimensions_pt();
     match mdp_webview::export_pdf(&doc, out, width_pt, height_pt) {
         Ok(()) => {
             eprintln!("mdp: wrote {}", out.display());

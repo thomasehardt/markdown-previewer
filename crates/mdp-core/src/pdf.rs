@@ -249,6 +249,11 @@ pub fn parse_css_color(s: &str) -> Option<[f32; 3]> {
     if parts.len() < 3 {
         return None;
     }
+    // A fully transparent surface (e.g. an element with no background) carries no
+    // color to paint; skip the fill rather than painting it black.
+    if parts.len() >= 4 && parts[3] == 0.0 {
+        return None;
+    }
     Some([parts[0] / 255.0, parts[1] / 255.0, parts[2] / 255.0])
 }
 
@@ -502,5 +507,7 @@ mod tests {
         assert!(parse_css_color("transparent").is_none());
         assert!(parse_css_color("#ffffff").is_none());
         assert!(parse_css_color("rgb(1, 2)").is_none());
+        // A fully transparent color is treated as "no fill", not black.
+        assert!(parse_css_color("rgba(0, 0, 0, 0)").is_none());
     }
 }

@@ -7,11 +7,13 @@
 [versions]
 katex = "0.16.47"
 mermaid = "11.16.0"
+pagedjs = "0.4.3"
 
 [files]
 "katex/katex.min.js" = "a29d2961d3146de5949d78ac7c1a9d93ae54955bad22a6db4fbe836e88e8bf48"
 "katex/katex.min.css" = "0289a02cf451a44dd73add683a09644252363871ac11713a647b732cee8b1ee3"
 "mermaid/mermaid.min.js" = "74d7c46dabca328c2294733910a8aa1ed0c37451776e8d5295da38a2b758fb9b"
+"pagedjs/paged.polyfill.js" = "f59f361802416c770d549a647958649af2cf6601999924bc00e4f507dad5269f"
 "katex/fonts/KaTeX_AMS-Regular.woff2" = "0cdd387c9590a1a9f9794560022dbb59654a7d86f187aa0c81495ad42d3a7308"
 "katex/fonts/KaTeX_Caligraphic-Bold.woff2" = "de7701e42cf1f4cf0b766c03fb27977207eee2f4fd5d76fa82188406da43ea4c"
 "katex/fonts/KaTeX_Caligraphic-Regular.woff2" = "5d53e70ad607c2352162dec9e0923fb54ecdafaccbf604cd8dcf7d00facb989b"

@@ -74,9 +74,12 @@ finished), then captures silently via `WKWebView.createPDF`. That capture is one
 tall page, which `mdp` then paginates into page-height pages before writing.
 Text stays selectable and diagrams stay vector-sharp (nothing is re-rasterized).
 Long code lines and wide tables are wrapped for export so they never clip at the
-page edge. The rendered surface color is painted behind each page, so a dark-mode
-export has no white margins. A window appears briefly during capture. Windows and
-Linux each need their own native path and are not yet implemented.
+page edge. Before capture, paged.js reflows the document into real page boxes, so
+each page has proper margins and no callout, table, code block, or diagram is
+split across a page break. The rendered surface color is painted behind each
+page, so a dark-mode export has no white margins. A window appears briefly during
+capture. Windows and Linux each need their own native path and are not yet
+implemented.
 
 Choose the paper size with `--page-size letter` (default) or `--page-size a4`,
 or set `page_size` in `config.toml`.
@@ -84,8 +87,7 @@ or set `page_size` in `config.toml`.
 You can also export from the preview window: the toolbar has an **Export PDF**
 button with a page-size picker (shown only in the native app, not in a browser).
 It prompts for a save location and writes the currently-shown file, matching the
-active color scheme. The one remaining rough edge is page breaks, which fall at
-fixed heights rather than at semantic boundaries.
+active color scheme.
 
 ## Authoring a theme
 

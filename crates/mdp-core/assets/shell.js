@@ -244,14 +244,31 @@
       })
       .catch(function () {})
       .then(function () {
+        // PDF export only: paginate into real page boxes now that math and
+        // diagrams have rendered. Preview mode leaves __mdpPaged unset.
+        if (
+          window.__mdpPaged &&
+          window.PagedPolyfill &&
+          typeof window.PagedPolyfill.preview === "function"
+        ) {
+          return window.PagedPolyfill.preview();
+        }
+        return null;
+      })
+      .catch(function () {})
+      .then(function () {
         document.documentElement.setAttribute("data-mdp-ready", "true");
         window.dispatchEvent(new Event("mdp:render-complete"));
         // Signal a host that registered an IPC handler (e.g. PDF export waits
         // for this before capturing). Absent in the plain preview; guarded.
         // Append the rendered surface color so a PDF capture can paint page
-        // margins/trailing space to match the document instead of white.
+        // margins/trailing space to match the document instead of white. After
+        // pagination the surface is the paged.js page box.
         if (window.ipc && typeof window.ipc.postMessage === "function") {
-          var surface = document.querySelector(".mdp-document") || document.body;
+          var surface =
+            document.querySelector(".pagedjs_page") ||
+            document.querySelector(".mdp-document") ||
+            document.body;
           var bg = "";
           try {
             bg = window.getComputedStyle(surface).backgroundColor || "";
