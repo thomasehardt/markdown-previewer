@@ -209,7 +209,10 @@ fn parse_export_request(msg: &str) -> Option<ExportRequest> {
 }
 
 /// Build the `mdp export` argument list for `file` -> `out` with the request's
-/// page size and scheme, threading the active theme through when set.
+/// page size and scheme, threading the active theme through when set. Only the
+/// macOS `handle_export` calls this, so it is macOS-only; without the gate it is
+/// dead code in the library build on other platforms (a `-D warnings` failure).
+#[cfg(target_os = "macos")]
 fn export_args(
     file: &Path,
     out: &Path,
@@ -704,6 +707,8 @@ mod tests {
         assert!(parse_export_request("render-complete rgb(0, 0, 0)").is_none());
     }
 
+    // Gated to macOS to match `export_args`, which is macOS-only.
+    #[cfg(target_os = "macos")]
     #[test]
     fn builds_export_subprocess_args() {
         let req = ExportRequest {
