@@ -24,7 +24,7 @@ jobs:
     name: macOS universal binary
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # rust-toolchain.toml pins the version (1.97.0); `rustup show` installs it,
       # then both macOS targets are added to that pinned toolchain.

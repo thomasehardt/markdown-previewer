@@ -93,22 +93,39 @@ simply fall back to their source text until the assets are present.
 
 ## Install
 
-To install the `mdp` command to `~/.cargo/bin` (needs a Rust toolchain via
-rustup):
+### From a release (macOS, no Rust needed)
+
+Each tagged release ships a universal binary that runs on both Apple Silicon and
+Intel Macs, on the
+[releases page](https://github.com/thomasehardt-sherpas/markdown-previewer/releases).
+Set `VERSION` to the tag you want:
+
+```sh
+VERSION=v0.1.0
+curl -L "https://github.com/thomasehardt-sherpas/markdown-previewer/releases/download/${VERSION}/mdp-${VERSION}-macos-universal.tar.gz" | tar xz
+xattr -d com.apple.quarantine mdp   # unsigned binary: clears Gatekeeper once
+./mdp <file.md>
+```
+
+Move `mdp` onto your PATH (for example `/usr/local/bin`) to run it from anywhere.
+The binary is self-contained: KaTeX, Mermaid, and paged.js are embedded, and it
+links only macOS system frameworks, so nothing else is needed at runtime.
+
+### From source (needs a Rust toolchain via rustup)
 
 ```sh
 ./scripts/install.sh
 ```
 
-That vendors the offline assets and runs `cargo install --path crates/mdp-cli`.
-Ensure `~/.cargo/bin` is on your PATH, then:
+That vendors the offline assets and runs `cargo install --path crates/mdp-cli`,
+placing `mdp` in `~/.cargo/bin`. Ensure that is on your PATH, then:
 
 ```sh
 mdp <file.md>
 ```
 
-Prebuilt cross-platform binaries and a Homebrew formula are a later step, tied
-to the Windows/Linux support in the [requirements backlog](docs/requirements.md).
+Linux and Windows builds, and a Homebrew formula, are a later step tied to the
+Windows/Linux runtime support in the [requirements backlog](docs/requirements.md).
 
 ## Test and coverage
 
