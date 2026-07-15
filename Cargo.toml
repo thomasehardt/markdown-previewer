@@ -15,7 +15,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 rust-version = "1.97.0"
-repository = "https://github.com/example/markdown-previewer"
+repository = "https://github.com/thomasehardt-sherpas/markdown-previewer"
 
 # Pinned exactly per design section 3. comrak extension field names churn
 # across releases, so the exact version matters.
