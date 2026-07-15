@@ -1,0 +1,63 @@
+# Build and publish release binaries when a version tag (v*) is pushed.
+#
+# Ships one universal macOS binary (arm64 + x86_64) as a tarball plus its
+# SHA-256, attached to a GitHub Release for the tag. macOS only, matching where
+# the tool is verified at runtime; Linux/Windows can be added as separate jobs
+# once their frontends are exercised.
+#
+# The offline front-end assets (KaTeX, Mermaid, paged.js) are gitignored, so the
+# job vendors them before building - otherwise the shipped binary would fall back
+# to source text for math and diagrams. Vendoring needs network, which GitHub
+# runners have (unlike a Homebrew build sandbox).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+# Needed so the job can create the Release and upload assets.
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: macOS universal binary
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the version (1.97.0); `rustup show` installs it,
+      # then both macOS targets are added to that pinned toolchain.
+      - name: Set up the pinned toolchain with both macOS targets
+        run: |
+          rustup show
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Vendor offline assets (KaTeX, Mermaid, paged.js)
+        run: ./scripts/vendor-assets.sh
+
+      - name: Build both architectures
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin -p mdp-cli
+          cargo build --release --locked --target x86_64-apple-darwin -p mdp-cli
+
+      - name: Assemble universal binary and package
+        run: |
+          mkdir -p dist
+          lipo -create -output dist/mdp \
+            target/aarch64-apple-darwin/release/mdp \
+            target/x86_64-apple-darwin/release/mdp
+          lipo -info dist/mdp
+          tarball="mdp-${GITHUB_REF_NAME}-macos-universal.tar.gz"
+          tar -C dist -czf "dist/${tarball}" mdp
+          ( cd dist && shasum -a 256 "${tarball}" > "${tarball}.sha256" )
+          ls -lh dist
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            dist/*.tar.gz dist/*.sha256 \
+            --title "mdp ${GITHUB_REF_NAME}" \
+            --generate-notes
