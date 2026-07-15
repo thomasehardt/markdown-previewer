@@ -738,14 +738,24 @@ fn paged_library() -> Option<&'static str> {
 /// and neutralizes both paged.js's on-screen page gaps and the document's own
 /// card box so each captured page is a clean, gap-free sheet.
 fn paged_head(width_px: f32, height_px: f32) -> String {
-    // Page margin in px (== pt after capture). ~0.6in, a conventional print edge.
-    const MARGIN_PX: f32 = 44.0;
+    // Page margin in px (== pt after capture). ~0.5in, a conventional print edge.
+    const MARGIN_PX: f32 = 36.0;
+    // Root font size for capture. The macOS capture maps 1 CSS px to 1 pt, so the
+    // on-screen 16px base would print as a 16pt body - far larger than a normal
+    // printed document, wasting paper. 10px prints as a ~10pt body, a standard
+    // printed-document size; every rem/em-based size (headings, code, math) scales
+    // with it, so the whole document shrinks to a print-appropriate density. (The
+    // page count of a diagram- or table-heavy document is floored by those fixed-
+    // height blocks, which do not scale with the text.) The page is forced white
+    // (not the theme surface) since a PDF is for printing.
+    const ROOT_PX: f32 = 10.0;
     format!(
         "<script data-mdp=\"paged-config\">window.PagedConfig={{auto:false}};window.__mdpPaged=true;</script>\n\
 <style data-mdp=\"paged\">\
+html{{font-size:{ROOT_PX}px;}}\
 @page{{size:{width_px}px {height_px}px;margin:{MARGIN_PX}px;}}\
 .pagedjs_pages{{display:block;}}\
-.pagedjs_page{{margin:0 !important;box-shadow:none !important;background:var(--surface-card);}}\
+.pagedjs_page{{margin:0 !important;box-shadow:none !important;background:#ffffff;}}\
 .mdp-document{{max-width:none !important;margin:0 !important;padding:0 !important;border:none !important;background:transparent !important;min-height:0 !important;}}\
 .mdp-document pre,.mdp-document table,.mdp-document blockquote,.mdp-document .markdown-alert,.mdp-document figure,.mdp-document .mermaid,.mdp-document img{{break-inside:avoid;}}\
 .mdp-document h1,.mdp-document h2,.mdp-document h3,.mdp-document h4,.mdp-document h5,.mdp-document h6{{break-after:avoid;}}\

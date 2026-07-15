@@ -78,7 +78,9 @@ touches the network -- the built tool stays fully offline.
 # build the whole workspace
 cargo build
 
-# open a rendered, read-only preview in a native window (the default path)
+# open a rendered, read-only preview in a native window (the default path).
+# on macOS this returns to the shell at once and the window outlives the
+# terminal; set MDP_DETACHED=1 to keep it in the foreground instead.
 cargo run -p mdp-cli -- README.md
 
 # force a color scheme, or layer a custom theme over the default

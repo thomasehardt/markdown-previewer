@@ -30,6 +30,28 @@ falls back to the server if it cannot initialize (for example, a missing Linux
 webkit runtime). `export` writes a self-contained `.html`, or a `.pdf` on macOS
 (Windows/Linux PDF is not yet implemented). `--help` and `--version` work.
 
+## Detached launch (macOS)
+
+Opening the native window does not block the shell. On macOS, `mdp` re-execs
+itself as a detached child (`setsid`, a new session with no controlling
+terminal, stdio redirected to `/dev/null`) and the original process returns
+immediately with no output. The window therefore outlives the terminal it was
+launched from. The re-exec (rather than a bare `fork`) is deliberate: AppKit and
+WKWebView must not be brought up across a `fork` without an intervening `exec`.
+
+The child is marked with the environment variable `MDP_DETACHED=1` so it does
+not detach a second time. Set `MDP_DETACHED=1` yourself to keep the preview in
+the foreground - useful when you want the process tied to a script's lifetime,
+or to read a diagnostic if the window fails to appear:
+
+```sh
+# run the window in the foreground (blocks until it closes)
+MDP_DETACHED=1 mdp notes.md
+```
+
+Only the native window detaches. `serve` and `view --frontend serve` stay in the
+foreground so their URL is visible and Ctrl-C stops them.
+
 ## Headless use (calling from another tool)
 
 `mdp serve` is the display-agnostic path: it needs no OS webview and does not
@@ -76,10 +98,22 @@ Text stays selectable and diagrams stay vector-sharp (nothing is re-rasterized).
 Long code lines and wide tables are wrapped for export so they never clip at the
 page edge. Before capture, paged.js reflows the document into real page boxes, so
 each page has proper margins and no callout, table, code block, or diagram is
-split across a page break. The rendered surface color is painted behind each
-page, so a dark-mode export has no white margins. A window appears briefly during
-capture. Windows and Linux each need their own native path and are not yet
-implemented.
+split across a page break. A window appears briefly during capture. Windows and
+Linux each need their own native path and are not yet implemented.
+
+A PDF is meant to be printed, so it always renders for print regardless of the
+preview or `config.toml` scheme: a white page with dark text (the light scheme is
+forced), a ~10pt body (the on-screen 16px base would print oversized, since the
+macOS capture maps 1 CSS px to 1 pt), and ~0.5in margins. Headings, code, and
+math all scale from that base, so the whole document is a normal printed density.
+The in-app Export button forwards the live preview scheme, but export overrides it
+to light all the same.
+
+One caveat: for a document that contains a Mermaid diagram, the exact page count
+can vary by about a page between exports. A diagram is an unbreakable block, so it
+is pushed whole to the next page when it does not fit, which can leave the page
+before it partly empty; and the diagram's captured height depends slightly on
+render timing. Text-only documents paginate deterministically.
 
 Choose the paper size with `--page-size letter` (default) or `--page-size a4`,
 or set `page_size` in `config.toml`.

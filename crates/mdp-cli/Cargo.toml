@@ -24,6 +24,12 @@ toml = "0.8"
 mdp-webview = { workspace = true, optional = true }
 mdp-serve = { workspace = true, optional = true }
 
+# Detach the GUI launch from the controlling terminal (setsid) so `mdp` returns
+# to the shell at once and the window outlives the terminal. macOS-only, matching
+# where the native webview runs; already in the tree via the webview deps.
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 # Real temp dirs for config-loading tests (no touching the user's real config).
 tempfile = "3"

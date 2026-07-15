@@ -36,6 +36,13 @@ mdp notes.md
 A window opens with a brief loading state, then your rendered document. The
 preview is read-only: it is for reading and presenting, not editing.
 
+Your shell prompt comes back right away. `mdp` hands the window off to a
+background process and returns at once, printing nothing, so you can keep using
+the same terminal. The preview stays open even if you close that terminal; to
+dismiss it, close the window (or press Cmd-Q). This applies to the native
+window; `mdp serve` still runs in the foreground so you can see its URL and stop
+it with Ctrl-C.
+
 Pass several files and switch between them with the file bar at the top of the
 preview:
 
@@ -104,8 +111,10 @@ can also export a PDF:
 mdp export notes.md --to notes.pdf
 ```
 
-A window appears briefly while it captures. PDF export on Windows and Linux is
-coming in a later version.
+A window appears briefly while it captures. The PDF is made for printing: it is
+always a white page with dark, print-sized text, even if you are previewing in a
+dark or tinted theme. Pick the paper size with `--page-size letter` (default) or
+`--page-size a4`. PDF export on Windows and Linux is coming in a later version.
 
 ## What renders
 

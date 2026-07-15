@@ -418,7 +418,7 @@ fn with_paged_css(theme_css: Option<String>) -> String {
 fn export_pdf_file(
     file: &Path,
     out: &Path,
-    scheme: ColorScheme,
+    _scheme: ColorScheme,
     extra_theme_css: Option<String>,
     page_size: PageSize,
 ) -> ExitCode {
@@ -432,7 +432,11 @@ fn export_pdf_file(
     let (width_pt, height_pt) = page_size.dimensions_pt();
     let opts = RenderOptions {
         title: file.file_name().map(|n| n.to_string_lossy().into_owned()),
-        color_scheme: scheme,
+        // A PDF is for printing documentation, so it always renders light on a
+        // white page regardless of the preview/config scheme (the in-app Export
+        // button forwards the live scheme, which may be dark). `_scheme` is
+        // ignored here on purpose.
+        color_scheme: ColorScheme::Light,
         extra_theme_css: Some(with_paged_css(extra_theme_css)),
         view_source_default: false,
         show_chrome: false,
@@ -467,6 +471,60 @@ fn export_pdf_file(
     ExitCode::from(2)
 }
 
+/// Re-launch this process fully detached from the controlling terminal, so a
+/// bare `mdp <file>` returns to the shell at once, prints nothing, and leaves
+/// the preview window open even after the terminal is closed.
+///
+/// Returns `Ok(true)` in the original (parent) process once the detached child
+/// is spawned - the caller should then exit. Returns `Ok(false)` when this call
+/// is already the detached child (marked by `MDP_DETACHED`), i.e. run the GUI
+/// here.
+///
+/// We re-exec instead of a bare `fork()`: AppKit / WKWebView must not be
+/// initialized across a `fork()` without an intervening `exec()`, so the child
+/// starts from a clean binary image and re-runs `main`. `setsid()` in the child
+/// puts it in a new session with no controlling terminal, which is what makes it
+/// survive the terminal hangup; stdio is redirected to `/dev/null` so nothing
+/// the window's engine might emit ever reaches the shell.
+#[cfg(all(feature = "webview", target_os = "macos"))]
+fn detach_from_terminal() -> std::io::Result<bool> {
+    use std::os::unix::process::CommandExt;
+    use std::process::{Command, Stdio};
+
+    // The detached child carries this marker; when we see it, do not fork again.
+    const DETACH_ENV: &str = "MDP_DETACHED";
+    if std::env::var_os(DETACH_ENV).is_some() {
+        return Ok(false);
+    }
+
+    let exe = std::env::current_exe()?;
+    // Forward the original arguments verbatim (skip argv[0]); cwd and the rest
+    // of the environment are inherited by default, so relative file paths and
+    // config discovery behave identically in the child.
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+
+    let mut cmd = Command::new(exe);
+    cmd.args(args)
+        .env(DETACH_ENV, "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    // Run in the child after fork, before exec: start a new session so the child
+    // has no controlling terminal and closing the shell will not SIGHUP it.
+    // SAFETY: `setsid` is async-signal-safe and touches no shared state; the
+    // closure allocates nothing.
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    cmd.spawn()?;
+    Ok(true)
+}
+
 /// Dispatch to the native webview frontend when the feature is compiled in.
 ///
 /// `show` runs the event loop and only returns on an error (the process
@@ -480,6 +538,18 @@ fn open_webview(
     theme: Option<&Path>,
     watch: &[PathBuf],
 ) -> ExitCode {
+    // Hand the preview off to a detached copy of ourselves so the shell prompt
+    // comes straight back and the window survives the terminal closing. macOS
+    // only (the sole verified GUI target); on failure we just run in-place.
+    #[cfg(target_os = "macos")]
+    match detach_from_terminal() {
+        // Parent: the detached child owns the window now; return to the shell.
+        Ok(true) => return ExitCode::SUCCESS,
+        // We are the detached child (or detaching is disabled): open here.
+        Ok(false) => {}
+        Err(e) => eprintln!("mdp: could not detach ({e}); running in the foreground."),
+    }
+
     match mdp_webview::show(source.clone(), watch, files, theme) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

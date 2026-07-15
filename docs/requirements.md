@@ -20,7 +20,7 @@ requirement to the implementation plan in `docs/design.md` section 9.
 | FR6 | The preview is read-only (no editing affordances). | 1 | Done |
 | FR7 | A read-only "view source" toggle showing the raw Markdown. | 4 | Done (button or press `s`) |
 | FR8 | Export to a single self-contained HTML file (offline, diagrams and math preserved). | 6 | Done (renders on open; static-SVG freezing is a later option) |
-| FR9 | Export to PDF (offline, diagrams and math preserved, paginated with clean breaks). | 7 | Done (macOS): paged.js reflows the capture into real page boxes (proper `@page` margins, no element split across a boundary), which `mdp-core::pdf` then slices into pages. Verified end-to-end with math + Mermaid, light and dark. Windows/Linux planned. |
+| FR9 | Export to PDF (offline, diagrams and math preserved, paginated with clean breaks). | 7 | Done (macOS): paged.js reflows the capture into real page boxes (proper `@page` margins, no element split across a boundary), which `mdp-core::pdf` then slices into pages. Always renders for print - forced light scheme, white page, ~10pt body (the capture maps 1 CSS px to 1 pt, so the 16px screen base is scaled down), ~0.5in margins - regardless of the preview/config scheme. Verified end-to-end with math + Mermaid. Caveat: a Mermaid diagram is an unbreakable block, so its page can be preceded by a partly-empty one and the count can vary ~1 page across exports; text-only docs are deterministic. Windows/Linux planned. |
 | FR10 | Watch tracked file(s); on change, show a non-intrusive reload prompt. Never auto-swap the reader's view. | 5 | Done (parent-dir watch, ~300ms debounce, banner; `--no-watch`) |
 | FR11 | Instant launch feedback: a window/tab with a loading state appears immediately, then content swaps in. | 1 | Done (spinner shell) |
 | FR12 | Callable by other tools (including Claude Code) to display Markdown headlessly (serve on an ephemeral port; print the URL). | 3 | Done |
@@ -32,6 +32,7 @@ requirement to the implementation plan in `docs/design.md` section 9.
 | FR18 | Table-of-contents sidebar generated from headings, toggleable. | 8 | Done (Contents toggle; shown only when headings exist; remembered) |
 | FR19 | Selectable PDF page size (US Letter or A4). | post-8 | Done: `--page-size letter\|a4` flag and `page_size` config key (flag > config > letter). Verified A4/Letter via `pdfinfo`. |
 | FR20 | Export to PDF from the preview UI (not just the CLI). | post-8 | Done (macOS): a toolbar Export button with a page-size picker prompts for a save location and shells out to `mdp export`. Shown only under a native host (hidden in serve/browser). Click path pending manual confirmation. |
+| FR21 | Launching the native preview returns to the shell immediately, prints nothing, and the window survives the terminal closing. | post-8 | Done (macOS): `mdp` re-execs a detached child (`setsid`, stdio to `/dev/null`) and the parent exits at once; the child carries `MDP_DETACHED=1` and does not re-detach (set it to force foreground). Re-exec, not bare `fork`, so AppKit/WKWebView init after an `exec`. Verified: parent returns in ~0.4s with no output; child has no controlling tty (`ps` TTY `??`), reparented to launchd. `serve` intentionally stays in the foreground. |
 
 ## Non-functional requirements
 
