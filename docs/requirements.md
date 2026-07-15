@@ -42,7 +42,7 @@ requirement to the implementation plan in `docs/design.md` section 9.
 | NFR2 | Cross-platform: macOS, Linux, Windows. | macOS verified end to end; Linux/Windows build + test in CI (GitHub Actions matrix), not yet exercised at runtime |
 | NFR3 | Single binary where the OS allows (macOS, Windows). Linux carries a documented `libwebkit2gtk` runtime dependency with graceful fallback to the serve frontend. | Done (automatic webview->serve fallback wired); Linux single-binary caveat documented |
 | NFR4 | Fast launch: something visibly happens immediately on start. | Done (instant spinner) |
-| NFR5 | MIT licensed; every shipped dependency license-compatible (MIT/Apache-2.0/BSD/ISC/CC0/Unicode/OFL). | Done; `cargo-deny` CI gate Planned |
+| NFR5 | MIT licensed; every shipped dependency license-compatible (MIT/Apache-2.0/BSD/ISC/CC0/Unicode/OFL). | Done; `cargo-deny` license gate runs in CI (the `license gate` job, `cargo deny check licenses`). |
 | NFR6 | Implemented in Rust with a pinned toolchain (`rust-toolchain.toml`) for reproducible builds. | Done (Rust 1.97.0) |
 | NFR7 | Reasonable 100% test coverage on core logic (skip trivial glue like getters/setters); the coverage gate runs on `mdp-core`. | Done (~96% line/region on `mdp-core`, clean measurement; the few uncovered lines are a packaging `panic!`, release-only asset arms, and defensive fallbacks). CI floor 90. |
 | NFR8 | Elegant, modern visual design. Neutral default theme; no company branding baked into the shipped tool. | Done (semantic-token theme, neutral default) |
