@@ -109,11 +109,11 @@ math all scale from that base, so the whole document is a normal printed density
 The in-app Export button forwards the live preview scheme, but export overrides it
 to light all the same.
 
-One caveat: for a document that contains a Mermaid diagram, the exact page count
-can vary by about a page between exports. A diagram is an unbreakable block, so it
-is pushed whole to the next page when it does not fit, which can leave the page
-before it partly empty; and the diagram's captured height depends slightly on
-render timing. Text-only documents paginate deterministically.
+Capture waits for the real completion signal (Mermaid, web fonts, and paged.js
+pagination all resolved) rather than a fixed timeout, so a given document exports
+to the same page count every time. One layout note remains: a diagram is an
+unbreakable block, so when it does not fit in the space left on a page it is
+pushed whole to the next one, which can leave the page before it partly empty.
 
 Choose the paper size with `--page-size letter` (default) or `--page-size a4`,
 or set `page_size` in `config.toml`.

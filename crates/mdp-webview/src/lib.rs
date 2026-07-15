@@ -555,11 +555,18 @@ pub fn export_pdf(
         })
         .with_on_page_load_handler(move |event, _url| {
             if matches!(event, PageLoadEvent::Finished) {
-                // Fallback: capture even if the render-complete signal is missed
-                // (no surface color available on this path).
+                // Safety net only. The shell's render-complete IPC message is the
+                // real trigger; it fires after Mermaid, web fonts, and paged.js
+                // pagination have all resolved (awaited promises, not timers). This
+                // timeout must stay well clear of that so it never pre-empts a
+                // document that is still laying out - a short timeout used to win
+                // the race on slower renders and capture a half-paginated page,
+                // which is what made the exported page count vary from run to run.
+                // It only fires if the IPC signal never arrives (a catastrophic
+                // script error before it posts).
                 let p = load_proxy.clone();
                 std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(3000));
+                    std::thread::sleep(std::time::Duration::from_millis(20_000));
                     let _ = p.send_event(PdfEvent::Capture(None));
                 });
             }
