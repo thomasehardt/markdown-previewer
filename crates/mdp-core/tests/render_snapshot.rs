@@ -52,8 +52,27 @@ fn redacted<F: FnOnce()>(f: F) {
     settings.bind(f);
 }
 
+/// Whether the gitignored vendored assets (KaTeX + Mermaid) are present in this
+/// build. When they are absent - a fresh checkout, or CI without the vendor step
+/// (scripts/vendor-assets.sh) - `render_document` omits those `<script>`/`<style>`
+/// blocks entirely, so a snapshot captured with them present cannot match. The
+/// asset-dependent snapshots below skip in that case (design section 7: CI does
+/// not require the vendor step). Run them locally with assets vendored, where a
+/// real markup regression is caught.
+fn assets_vendored() -> bool {
+    let doc = render_document(
+        "$x$\n\n```mermaid\ngraph TD; A --> B;\n```\n",
+        &RenderOptions::default(),
+    );
+    doc.html.contains(r#"data-mdp="katex-lib""#) && doc.html.contains(r#"data-mdp="mermaid-lib""#)
+}
+
 #[test]
 fn corpus_renders_to_expected_html() {
+    if !assets_vendored() {
+        eprintln!("skipping corpus snapshot: vendored KaTeX/Mermaid assets absent");
+        return;
+    }
     let markdown = include_str!("fixtures/corpus.md");
     let opts = RenderOptions {
         title: Some("Corpus".to_string()),
@@ -71,6 +90,10 @@ fn corpus_renders_to_expected_html() {
 /// snapshot shows exactly the body markup those features produce.
 #[test]
 fn phase2_features_render_to_expected_markup() {
+    if !assets_vendored() {
+        eprintln!("skipping phase2 snapshot: vendored KaTeX/Mermaid assets absent");
+        return;
+    }
     let markdown = "\
 Inline $a^2 + b^2 = c^2$ and a display block:\n\
 \n\
